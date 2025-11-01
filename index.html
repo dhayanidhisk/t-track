@@ -1,0 +1,1990 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Staff Tracker Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet Map CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <!-- Leaflet Map JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <!-- Leaflet.draw Plugin for Geofencing -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; /* Prevent scrolling on the body */
+        }
+        #map { /* Apply height only to the main map */
+            height: 100%;
+        }
+        #map-container { /* Main map container */
+            height: 100vh;
+            position: relative; /* Needed for absolute positioning */
+        }
+        
+        /* Custom scrollbar for sidebar/modal sections */
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #1f2937; /* gray-800 */
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #4b5563; /* gray-600 */
+            border-radius: 3px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb:hover {
+            background: #6b7280; /* gray-500 */
+        }
+        
+        /* Leaflet marker customization */
+        .staff-marker-label {
+            background-color: rgba(255, 255, 255, 0.9); /* white with opacity */
+            border: 1px solid #94a3b8; /* gray-400 */
+            color: #1e293b; /* gray-800 */
+            font-weight: bold;
+            font-size: 12px;
+            white-space: nowrap;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+        /* Class for clickable staff card */
+        .staff-card-clickable {
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out;
+        }
+        .staff-card-clickable:hover {
+            background-color: #374151; /* gray-700 */
+        }
+        /* Geofence Alert Flash - This is the "problem" state (OUTSIDE) */
+        @keyframes pulse-red {
+            0%, 100% {
+                background-color: #7f1d1d; /* red-900 */
+                border-color: #ef4444; /* red-500 */
+            }
+            50% {
+                background-color: #1f2937; /* gray-800 */
+                border-color: #4b5563; /* gray-600 */
+            }
+        }
+        .geofence-alert {
+            animation: pulse-red 1.5s infinite;
+        }
+
+        /* Sidebar Card Highlight */
+        @keyframes highlight-blue {
+            0%, 100% { background-color: #1f2937; } /* gray-800 */
+            50% { background-color: #1d4ed8; } /* blue-700 */
+        }
+        .card-highlight {
+            animation: highlight-blue 1.5s ease-in-out;
+        }
+
+        /* Hide Leaflet.draw toolbar */
+        .leaflet-draw-toolbar {
+            display: none;
+        }
+        /* Geofence Assignment List */
+        .geofence-staff-list {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #4b5563; /* gray-600 */
+            border-radius: 0.375rem; /* rounded-md */
+            padding: 0.5rem; /* p-2 */
+            background-color: #374151; /* gray-700 */
+        }
+        /* Location text style */
+        .location-text {
+            font-size: 0.8rem; /* text-xs */
+            color: #d1d5db; /* gray-300 */
+            font-style: italic;
+        }
+        .location-text button {
+            color: #93c5fd; /* blue-300 */
+            text-decoration: underline;
+            font-style: normal;
+        }
+        .location-text button:hover {
+            color: #bfdbfe; /* blue-200 */
+        }
+        
+        /* Style for date/select inputs */
+        input[type="date"]::-webkit-calendar-picker-indicator,
+        select {
+             filter: invert(0.8); /* Make icons visible on dark background */
+        }
+        select {
+             background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+             background-position: right 0.5rem center;
+             background-repeat: no-repeat;
+             background-size: 1.5em 1.5em;
+             padding-right: 2.5rem;
+             -webkit-appearance: none;
+             -moz-appearance: none;
+             appearance: none;
+        }
+        
+        /* Search Bar Styles */
+        #search-container {
+            position: absolute;
+            top: 1rem; 
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000; 
+            width: 90%;
+            max-width: 400px;
+        }
+        #search-input {
+            width: 100%; padding: 0.75rem 1rem; border: 1px solid #4b5563; border-radius: 0.375rem; background-color: #1f2937; color: white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+        }
+        #search-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5); }
+        #search-results {
+            position: absolute; top: calc(100% + 0.25rem); left: 0; right: 0; background-color: #1f2937; border: 1px solid #4b5563; border-radius: 0.375rem; max-height: 200px; overflow-y: auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); z-index: 999;
+        }
+        #search-results div { padding: 0.5rem 1rem; cursor: pointer; border-bottom: 1px solid #374151; }
+        #search-results div:last-child { border-bottom: none; }
+        #search-results div:hover { background-color: #374151; }
+        #search-results .staff-details { font-size: 0.75rem; color: #9ca3af; }
+        
+        /* Filter Icon Button */
+        #filter-icon-btn {
+            position: absolute;
+            top: 1rem; /* 16px */
+            right: 1rem; /* 16px */
+            z-index: 1000;
+            padding: 0.5rem; /* p-2 */
+            background-color: #1f2937; /* gray-800 */
+            border: 1px solid #4b5563; /* gray-600 */
+            border-radius: 0.375rem; /* rounded-md */
+            color: #d1d5db; /* gray-300 */
+            cursor: pointer;
+            transition: background-color 0.2s, color 0.2s;
+        }
+        #filter-icon-btn:hover {
+            background-color: #374151; /* gray-700 */
+            color: white;
+        }
+        #filter-icon-btn.active { /* Style when filters are applied */
+            background-color: #1d4ed8; /* blue-700 */
+            color: white;
+            border-color: #1d4ed8;
+        }
+         #filter-icon-btn svg {
+             width: 1.25rem; /* w-5 */
+             height: 1.25rem; /* h-5 */
+         }
+
+        /* Filter Modal Styles */
+        #filter-modal .filter-section {
+            margin-bottom: 1rem; /* mb-4 */
+            padding-bottom: 1rem; /* pb-4 */
+            border-bottom: 1px solid #4b5563; /* border-b border-gray-600 */
+        }
+        #filter-modal .filter-section:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+        #filter-modal h3 {
+            font-size: 1rem; /* text-base */
+            font-weight: 600; /* font-semibold */
+            margin-bottom: 0.5rem; /* mb-2 */
+            color: #e5e7eb; /* gray-200 */
+        }
+        #filter-modal .checkbox-list {
+            max-height: 150px; /* Adjust as needed */
+            overflow-y: auto;
+            padding: 0.5rem; /* p-2 */
+            border: 1px solid #4b5563; /* border border-gray-600 */
+            border-radius: 0.375rem; /* rounded-md */
+            background-color: #374151; /* bg-gray-700 */
+            space-y: 0.25rem; /* space-y-1 */
+        }
+         #filter-modal label {
+             display: flex;
+             align-items: center;
+             cursor: pointer;
+             color: #d1d5db; /* gray-300 */
+             font-size: 0.875rem; /* text-sm */
+             user-select: none; /* Prevent text selection on click */
+         }
+         #filter-modal input[type="checkbox"] {
+             margin-right: 0.5rem; /* mr-2 */
+             height: 1rem; /* h-4 */
+             width: 1rem; /* w-4 */
+             border-radius: 0.25rem; /* rounded */
+             border-color: #6b7280; /* border-gray-500 */
+             background-color: #4b5563; /* bg-gray-600 */
+             color: #6366f1; /* text-indigo-600 */
+             focus:ring-indigo-500;
+         }
+         #filter-modal label.disabled {
+             color: #6b7280; /* gray-500 */
+             cursor: not-allowed;
+             opacity: 0.6;
+         }
+         #filter-modal input[type="checkbox"]:disabled {
+             opacity: 0.5;
+         }
+
+         /* Day Report Modal List */
+         #day-report-list {
+             max-height: 300px;
+             overflow-y: auto;
+             border: 1px solid #4b5563;
+             border-radius: 0.375rem;
+             padding: 0.5rem;
+             background-color: #1f2937; /* gray-800 */
+         }
+         #day-report-list p {
+             padding: 0.25rem 0.5rem;
+             border-bottom: 1px solid #374151; /* gray-700 */
+         }
+         #day-report-list p:last-child {
+             border-bottom: none;
+         }
+        
+    </style>
+</head>
+<body class="bg-gray-800 text-white">
+
+    <!-- Main Container -->
+    <div class="flex relative h-screen">
+
+        <!-- Sidebar -->
+        <div class="w-96 h-full bg-gray-900 shadow-lg flex flex-col z-20">
+            <!-- Header -->
+            <div class="p-4 border-b border-gray-700 flex-shrink-0">
+                <h1 class="text-2xl font-bold text-center text-white">Staff Tracker</h1>
+                <div id="connection-status" class="mt-2 text-sm font-medium text-center text-red-400">
+                    Connecting to database...
+                </div>
+            </div>
+            
+            <!-- Add Staff Button -->
+            <div class="p-4 border-b border-gray-700 flex-shrink-0">
+                <button id="open-add-staff-modal-btn" class="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium">
+                    + Add New Staff
+                </button>
+            </div>
+
+            <!-- Geofence Section -->
+            <div class="p-4 border-b border-gray-700 flex-shrink-0">
+                <h2 class="text-lg font-semibold mb-2">Geofences</h2>
+                <button id="create-geofence-btn" class="w-full px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 font-medium mb-3">
+                    Create New Geofence (Circle)
+                </button>
+                <div id="geofence-list" class="custom-scroll max-h-32 overflow-y-auto space-y-2">
+                    <p id="loading-geofences" class="text-gray-400">Loading geofences...</p>
+                    <!-- Geofences will be listed here -->
+                </div>
+            </div>
+            
+            <!-- Staff List -->
+            <div id="staff-list" class="custom-scroll flex-grow overflow-y-auto p-4 space-y-3">
+                <!-- Staff cards will be injected here by JavaScript -->
+                <p id="loading-staff" class="text-gray-400">Loading staff list...</p>
+            </div>
+        </div>
+
+        <!-- Map Area -->
+        <div id="map-container" class="flex-grow h-full">
+            <!-- This div is the map container -->
+            <div id="map" class="w-full h-full"></div>
+
+            <!-- Search Bar Container -->
+            <div id="search-container">
+                <input type="text" id="search-input" placeholder="Search by Name, Phone, Company, Branch...">
+                <div id="search-results" class="hidden">
+                    <!-- Search results will appear here -->
+                </div>
+            </div>
+
+            <!-- Filter Icon Button -->
+            <button id="filter-icon-btn" title="Filter Staff View">
+                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.572a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
+                 </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Add Staff Modal (Updated) -->
+    <div id="add-staff-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999] hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg border border-gray-700">
+            <h2 class="text-xl font-bold text-white mb-4">Add New Staff</h2>
+            <div class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="new-staff-name" class="block text-sm font-medium text-gray-300">Name</label>
+                        <input type="text" id="new-staff-name" placeholder="Staff's full name" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                    </div>
+                    <div>
+                        <label for="new-staff-phone" class="block text-sm font-medium text-gray-300">Phone Number (10 Digits)</label>
+                        <input type="tel" id="new-staff-phone" placeholder="e.g., 9876543210" maxlength="10" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                    </div>
+                </div>
+                
+                <div>
+                    <label for="new-staff-company" class="block text-sm font-medium text-gray-300">Company</label>
+                    <select id="new-staff-company" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                        <option value="">Select Company</option>
+                        <option value="Toyota">Toyota</option>
+                        <option value="Ather">Ather</option>
+                        <option value="AMS">AMS</option>
+                        <option value="Other">Other (Specify)</option>
+                    </select>
+                    <input type="text" id="new-staff-company-other" placeholder="Enter company name" class="mt-2 hidden w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white">
+                </div>
+                
+                <div>
+                    <label for="new-staff-branch" class="block text-sm font-medium text-gray-300">Branch</label>
+                    <select id="new-staff-branch" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                        <option value="">Select Branch</option>
+                        <option value="Coimbatore">Coimbatore</option>
+                        <option value="Erode">Erode</option>
+                        <option value="Tiruppur">Tiruppur</option>
+                        <option value="Mettupalayam">Mettupalayam</option>
+                        <option value="Udumalpet">Udumalpet</option>
+                        <option value="Dharapuram">Dharapuram</option>
+                        <option value="Madampatti">Madampatti</option>
+                        <option value="Pollachi">Pollachi</option>
+                        <option value="Ooty">Ooty</option>
+                        <option value="Kangayam">Kangayam</option>
+                        <option value="Bhavani">Bhavani</option>
+                        <option value="Other">Other (Specify)</option>
+                    </select>
+                    <input type="text" id="new-staff-branch-other" placeholder="Enter branch name" class="mt-2 hidden w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white">
+                </div>
+                
+                <div>
+                    <label for="new-staff-dept" class="block text-sm font-medium text-gray-300">Department</label>
+                    <select id="new-staff-dept" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                        <option value="">Select Department</option>
+                        <option value="Marketing">Marketing</option>
+                        <option value="Insurance">Insurance</option>
+                        <option value="Eco Wash">Eco Wash</option>
+                        <option value="Towing Service">Towing Service</option>
+                        <option value="Driver Service">Driver Service</option>
+                        <option value="BrakeDown Service">BrakeDown Service</option>
+                        <option value="Other">Other (Specify)</option>
+                    </select>
+                    <input type="text" id="new-staff-dept-other" placeholder="Enter department name" class="mt-2 hidden w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white">
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end space-x-3">
+                <button id="cancel-add-staff-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Cancel</button>
+                <button id="add-staff-btn" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">Add Staff</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Staff Info Modal (Updated) -->
+    <div id="edit-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999] hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg border border-gray-700">
+            <h2 class="text-xl font-bold text-white mb-4">Edit Staff Info</h2>
+            <input type="hidden" id="edit-staff-id">
+            <div class="space-y-4">
+                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="edit-staff-name" class="block text-sm font-medium text-gray-300">Name</label>
+                        <input type="text" id="edit-staff-name" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                    </div>
+                    <div>
+                        <label for="edit-staff-phone" class="block text-sm font-medium text-gray-300">Phone Number (10 Digits)</label>
+                        <input type="tel" id="edit-staff-phone" placeholder="e.g., 9876543210" maxlength="10" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                    </div>
+                </div>
+                
+                <div>
+                    <label for="edit-staff-company" class="block text-sm font-medium text-gray-300">Company</label>
+                    <select id="edit-staff-company" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                        <option value="">Select Company</option>
+                        <option value="Toyota">Toyota</option>
+                        <option value="Ather">Ather</option>
+                        <option value="AMS">AMS</option>
+                        <option value="Other">Other (Specify)</option>
+                    </select>
+                    <input type="text" id="edit-staff-company-other" placeholder="Enter company name" class="mt-2 hidden w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white">
+                </div>
+                
+                <div>
+                    <label for="edit-staff-branch" class="block text-sm font-medium text-gray-300">Branch</label>
+                    <select id="edit-staff-branch" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                        <option value="">Select Branch</option>
+                        <option value="Coimbatore">Coimbatore</option>
+                        <option value="Erode">Erode</option>
+                        <option value="Tiruppur">Tiruppur</option>
+                        <option value="Mettupalayam">Mettupalayam</option>
+                        <option value="Udumalpet">Udumalpet</option>
+                        <option value="Dharapuram">Dharapuram</option>
+                        <option value="Madampatti">Madampatti</option>
+                        <option value="Pollachi">Pollachi</option>
+                        <option value="Ooty">Ooty</option>
+                        <option value="Kangayam">Kangayam</option>
+                        <option value="Bhavani">Bhavani</option>
+                        <option value="Other">Other (Specify)</option>
+                    </select>
+                    <input type="text" id="edit-staff-branch-other" placeholder="Enter branch name" class="mt-2 hidden w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white">
+                </div>
+                
+                <div>
+                    <label for="edit-staff-dept" class="block text-sm font-medium text-gray-300">Department</label>
+                    <select id="edit-staff-dept" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                        <option value="">Select Department</option>
+                        <option value="Marketing">Marketing</option>
+                        <option value="Insurance">Insurance</option>
+                        <option value="Eco Wash">Eco Wash</option>
+                        <option value="Towing Service">Towing Service</option>
+                        <option value="Driver Service">Driver Service</option>
+                        <option value="BrakeDown Service">BrakeDown Service</option>
+                        <option value="Other">Other (Specify)</option>
+                    </select>
+                    <input type="text" id="edit-staff-dept-other" placeholder="Enter department name" class="mt-2 hidden w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white">
+                </div>
+            </div>
+            <!-- Modal Buttons -->
+            <div class="mt-6 flex justify-between">
+                <button id="delete-staff-btn" class="px-4 py-2 bg-red-700 text-white rounded-md hover:bg-red-800">Delete Staff</button>
+                <div class="space-x-3">
+                    <button id="cancel-edit-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Cancel</button>
+                    <button id="save-edit-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Edit Status Modal -->
+    <div id="edit-status-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999] hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-sm border border-gray-700">
+            <h2 class="text-xl font-bold text-white mb-4">Edit Staff Status</h2>
+            <input type="hidden" id="edit-status-staff-id">
+            <div>
+                <label for="edit-status-select" class="block text-sm font-medium text-gray-300">New Status:</label>
+                <select id="edit-status-select" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-white bg-gray-700">
+                    <option value="Offline">Offline</option>
+                    <option value="Driving to Client">Driving to Client</option>
+                    <option value="At Job Site">At Job Site</option>
+                    <option value="On Break">On Break</option>
+                    <option value="End of Day">End of Day</option>
+                    <option value="Other">Other (Specify)</option>
+                </select>
+                <input type="text" id="edit-status-other" placeholder="Enter custom status" class="mt-2 hidden block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 text-white bg-gray-700">
+            </div>
+            <div class="mt-6 flex justify-end space-x-3">
+                <button id="cancel-status-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Cancel</button>
+                <button id="save-status-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Save/Edit Geofence Modal -->
+    <div id="geofence-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999] hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg border border-gray-700">
+            <!-- Modal Title -->
+            <h2 id="geofence-modal-title" class="text-xl font-bold text-white mb-4">Create Geofence</h2>
+            <!-- Hidden input to store ID for editing -->
+            <input type="hidden" id="edit-geofence-id">
+            
+            <!-- Geofence Name -->
+            <div class="mb-4">
+                <label for="geofence-name" class="block text-sm font-medium text-gray-300">Geofence Name:</label>
+                <input type="text" id="geofence-name" placeholder="e.g., 'Main Worksite'" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+            </div>
+            
+            <!-- Geofence Staff Assignment -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-300 mb-2">Assign to Staff:</label>
+                <div class="flex items-center mb-2">
+                    <input type="checkbox" id="assign-all-staff" class="h-4 w-4 text-purple-600 border-gray-500 rounded focus:ring-purple-500 bg-gray-700">
+                    <label for="assign-all-staff" class="ml-2 block text-sm text-gray-200">Assign to All Staff (includes new staff)</label>
+                </div>
+                <div id="geofence-staff-list" class="geofence-staff-list space-y-1">
+                    <!-- Staff checkboxes will be injected here -->
+                    <p class="text-gray-400">Loading staff...</p>
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-end space-x-3">
+                <button id="cancel-geofence-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Cancel</button>
+                <button id="save-geofence-btn" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Modal (for confirmations and alerts) -->
+    <div id="message-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999] hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-sm border border-gray-700">
+            <h2 id="message-title" class="text-xl font-bold text-white mb-4">Notification</h2>
+            <p id="message-text" class="text-gray-300 mb-6">This is a message.</p>
+            <div id="message-buttons" class="flex justify-end space-x-3">
+                <button id="message-cancel-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500 hidden">Cancel</button>
+                <button id="message-ok-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">OK</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Filter Modal -->
+     <div id="filter-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9998] hidden">
+         <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-xl border border-gray-700 max-h-[90vh] flex flex-col">
+             <h2 class="text-xl font-bold text-white mb-4 flex-shrink-0">Filter Staff View</h2>
+
+             <!-- Filter Content (Scrollable) -->
+             <div class="flex-grow overflow-y-auto pr-2 custom-scroll space-y-4">
+                 <!-- Company Filter -->
+                 <div class="filter-section">
+                     <h3>Select Companies</h3>
+                     <div id="filter-company-list" class="checkbox-list custom-scroll">
+                         <label><input type="checkbox" class="filter-select-all" data-type="company"> Select All</label>
+                         <!-- Company options populated by JS -->
+                     </div>
+                 </div>
+                 <!-- Branch Filter -->
+                 <div class="filter-section">
+                     <h3>Select Branches</h3>
+                     <div id="filter-branch-list" class="checkbox-list custom-scroll">
+                         <label><input type="checkbox" class="filter-select-all" data-type="branch"> Select All</label>
+                         <!-- Branch options populated by JS -->
+                     </div>
+                 </div>
+                 <!-- Department Filter -->
+                 <div class="filter-section">
+                     <h3>Select Departments</h3>
+                     <div id="filter-dept-list" class="checkbox-list custom-scroll">
+                          <label><input type="checkbox" class="filter-select-all" data-type="dept"> Select All</label>
+                         <!-- Dept options populated by JS -->
+                     </div>
+                 </div>
+                 <!-- Staff Filter -->
+                 <div class="filter-section">
+                     <h3>Select Staff</h3>
+                     <div id="filter-staff-list" class="checkbox-list custom-scroll">
+                          <label><input type="checkbox" class="filter-select-all" data-type="staff"> Select All</label>
+                         <!-- Staff options populated by JS -->
+                     </div>
+                 </div>
+                 <!-- Status Filter -->
+                 <div class="filter-section">
+                     <h3>Select Statuses</h3>
+                     <div id="filter-status-list" class="checkbox-list custom-scroll">
+                         <label><input type="checkbox" class="filter-select-all" data-type="status"> Select All</label>
+                         <label><input type="checkbox" value="live" data-type="status"> Live</label>
+                         <label><input type="checkbox" value="no-signal" data-type="status"> Live (No Signal)</label>
+                         <label><input type="checkbox" value="Offline" data-type="status"> Offline</label>
+                         <label><input type="checkbox" value="Driving to Client" data-type="status"> Driving to Client</label>
+                         <label><input type="checkbox" value="At Job Site" data-type="status"> At Job Site</label>
+                         <label><input type="checkbox" value="On Break" data-type="status"> On Break</label>
+                         <label><input type="checkbox" value="End of Day" data-type="status"> End of Day</label>
+                         <label><input type="checkbox" value="Other" data-type="status"> Other</label>
+                     </div>
+                 </div>
+             </div>
+
+             <!-- Modal Buttons -->
+             <div class="mt-6 flex justify-between items-center flex-shrink-0">
+                  <button id="clear-filters-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Clear Filters</button>
+                 <div class="space-x-3">
+                     <button id="cancel-filter-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Cancel</button>
+                     <button id="apply-filters-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Apply Filters</button>
+                 </div>
+             </div>
+         </div>
+     </div>
+
+    <!-- History Modal -->
+    <div id="history-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999] hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-sm border border-gray-700">
+            <h2 class="text-xl font-bold text-white mb-2">View History</h2>
+            <p class="text-gray-300 mb-4 text-sm">For: <span id="history-staff-name" class="font-bold"></span></p>
+            <input type="hidden" id="history-staff-id">
+            
+            <div class="mb-4">
+                <label for="history-date-picker" class="block text-sm font-medium text-gray-300">Select Date:</label>
+                <input type="date" id="history-date-picker" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+            </div>
+
+            <div class="mt-6 flex justify-end space-x-3">
+                <button id="cancel-history-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Cancel</button>
+                <button id="show-history-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Show Path</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NEW: Day Report Modal -->
+    <div id="day-report-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999] hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg border border-gray-700 flex flex-col max-h-[90vh]">
+            <h2 class="text-xl font-bold text-white mb-2">Daily Report</h2>
+            <p class="text-gray-300 mb-1 text-sm">For: <span id="report-staff-name" class="font-bold"></span></p>
+            <p class="text-gray-300 mb-4 text-sm">Date: <span id="report-date" class="font-bold"></span></p>
+            <input type="hidden" id="report-staff-id">
+            
+            <div id="day-report-list" class="custom-scroll flex-grow mb-4">
+                <!-- Report items will be injected here -->
+                <p class="text-gray-400">Loading report...</p>
+            </div>
+
+            <div class="flex justify-end flex-shrink-0">
+                <button id="close-report-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Close</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Import Firebase modules
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            collection, 
+            onSnapshot, 
+            query, 
+            where, 
+            getDocs,
+            setDoc,
+            addDoc,
+            updateDoc,
+            deleteDoc,
+            Timestamp,
+            writeBatch,
+            setLogLevel
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- App State ---
+        let db, auth;
+        let map; // Main map
+        let staffMarkers = {}; // Stores { staffId: L.Marker }
+        let currentHistoryPath = null; // Stores L.FeatureGroup (line + points)
+        let staffDataCache = {}; // Stores { staffId: { id, data, geofenceState: {} } }
+        let activeTimeIntervals = {}; // Stores { staffId: intervalId }
+        let blueIcon, greyIcon;
+        const HEARTBEAT_THRESHOLD_MS = 2 * 60 * 1000; // 2 minutes
+        const GAP_THRESHOLD_MINS = 20; // 20 minutes
+        
+        // Geofence State
+        let geofencesCache = {}; // Stores { id: { name, center, radius, layer, assignedStaff: [] } }
+        let drawnItems; // Layer group for drawn geofences
+        let drawControl; // Leaflet.draw controller
+        let tempGeofenceData; // Holds new fence data before saving
+        
+        // Filter State - Holds the currently APPLIED filters
+        let currentFilterState = {
+            companies: new Set(),
+            branches: new Set(),
+            departments: new Set(),
+            staffIds: new Set(),
+            statuses: new Set()
+        };
+        // Temporary state for the modal while selections are being made
+        let tempFilterState = { 
+            companies: new Set(), 
+            branches: new Set(), 
+            departments: new Set(), 
+            staffIds: new Set(), 
+            statuses: new Set() 
+        };
+        let isFilterModalOpen = false; 
+
+        // --- Firebase Config ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyAFYGVRpJsfh5xvnsTu4dkUM4w8KHlnc4Y",
+          authDomain: "staff-tracker-179eb.firebaseapp.com",
+          projectId: "staff-tracker-179eb",
+          storageBucket: "staff-tracker-179eb.firebasestorage.app",
+          messagingSenderId: "993543843577",
+          appId: "1:993543843577:web:fb48a67ad56ceda0ddfc28",
+          measurementId: "G-JD9L5RJ4ED"
+        };
+        
+        const staffCollectionPath = `staff`;
+        const geofenceCollectionPath = `geofences`;
+        
+        // --- UI Elements ---
+        const connectionStatusEl = document.getElementById('connection-status');
+        const staffListEl = document.getElementById('staff-list');
+        const loadingStaffEl = document.getElementById('loading-staff');
+        
+        // Add Staff Modal UI
+        const addStaffModal = document.getElementById('add-staff-modal');
+        const openAddStaffModalBtn = document.getElementById('open-add-staff-modal-btn');
+        const newStaffNameInput = document.getElementById('new-staff-name');
+        const newStaffPhoneInput = document.getElementById('new-staff-phone');
+        const newStaffCompanySelect = document.getElementById('new-staff-company');
+        const newStaffCompanyOther = document.getElementById('new-staff-company-other');
+        const newStaffBranchSelect = document.getElementById('new-staff-branch');
+        const newStaffBranchOther = document.getElementById('new-staff-branch-other');
+        const newStaffDeptSelect = document.getElementById('new-staff-dept');
+        const newStaffDeptOther = document.getElementById('new-staff-dept-other');
+        const cancelAddStaffBtn = document.getElementById('cancel-add-staff-btn');
+        const addStaffBtn = document.getElementById('add-staff-btn');
+        
+        // Edit Staff Modal UI
+        const editModal = document.getElementById('edit-modal');
+        const editStaffIdInput = document.getElementById('edit-staff-id');
+        const editStaffNameInput = document.getElementById('edit-staff-name');
+        const editStaffPhoneInput = document.getElementById('edit-staff-phone');
+        const editStaffCompanySelect = document.getElementById('edit-staff-company');
+        const editStaffCompanyOther = document.getElementById('edit-staff-company-other');
+        const editStaffBranchSelect = document.getElementById('edit-staff-branch');
+        const editStaffBranchOther = document.getElementById('edit-staff-branch-other');
+        const editStaffDeptSelect = document.getElementById('edit-staff-dept');
+        const editStaffDeptOther = document.getElementById('edit-staff-dept-other');
+        const cancelEditBtn = document.getElementById('cancel-edit-btn');
+        const saveEditBtn = document.getElementById('save-edit-btn');
+        const deleteStaffBtn = document.getElementById('delete-staff-btn');
+        
+        // Edit Status Modal UI
+        const editStatusModal = document.getElementById('edit-status-modal');
+        const editStatusStaffIdInput = document.getElementById('edit-status-staff-id');
+        const editStatusSelect = document.getElementById('edit-status-select');
+        const editStatusOtherInput = document.getElementById('edit-status-other');
+        const cancelStatusBtn = document.getElementById('cancel-status-btn');
+        const saveStatusBtn = document.getElementById('save-status-btn');
+        
+        // Geofence Modal UI
+        const geofenceModal = document.getElementById('geofence-modal');
+        const geofenceModalTitle = document.getElementById('geofence-modal-title');
+        const editGeofenceIdInput = document.getElementById('edit-geofence-id');
+        const geofenceNameInput = document.getElementById('geofence-name');
+        const cancelGeofenceBtn = document.getElementById('cancel-geofence-btn');
+        const saveGeofenceBtn = document.getElementById('save-geofence-btn');
+        const assignAllStaffCheckbox = document.getElementById('assign-all-staff');
+        const geofenceStaffListEl = document.getElementById('geofence-staff-list');
+        
+        // Message Modal UI
+        const messageModal = document.getElementById('message-modal');
+        const messageTitle = document.getElementById('message-title');
+        const messageText = document.getElementById('message-text');
+        const messageButtonsEl = document.getElementById('message-buttons');
+        let messageOkBtn = document.getElementById('message-ok-btn');
+        let messageCancelBtn = document.getElementById('message-cancel-btn');
+        
+        // Geofence UI
+        const createGeofenceBtn = document.getElementById('create-geofence-btn');
+        const geofenceListEl = document.getElementById('geofence-list');
+        const loadingGeofencesEl = document.getElementById('loading-geofences');
+        
+        // Search Bar UI
+        const searchInput = document.getElementById('search-input');
+        const searchResultsEl = document.getElementById('search-results');
+        
+        // Filter Modal UI
+        const filterIconBtn = document.getElementById('filter-icon-btn');
+        const filterModal = document.getElementById('filter-modal');
+        const filterCompanyList = document.getElementById('filter-company-list');
+        const filterBranchList = document.getElementById('filter-branch-list');
+        const filterDeptList = document.getElementById('filter-dept-list');
+        const filterStaffList = document.getElementById('filter-staff-list');
+        const filterStatusList = document.getElementById('filter-status-list');
+        const cancelFilterBtn = document.getElementById('cancel-filter-btn');
+        const clearFiltersBtn = document.getElementById('clear-filters-btn');
+        const applyFiltersBtn = document.getElementById('apply-filters-btn');
+        
+        // History Modal UI
+        const historyModal = document.getElementById('history-modal');
+        const historyStaffIdInput = document.getElementById('history-staff-id');
+        const historyStaffNameEl = document.getElementById('history-staff-name');
+        const historyDatePicker = document.getElementById('history-date-picker');
+        const cancelHistoryBtn = document.getElementById('cancel-history-btn');
+        const showHistoryBtn = document.getElementById('show-history-btn');
+
+        // Day Report Modal UI
+        const dayReportModal = document.getElementById('day-report-modal');
+        const reportStaffNameEl = document.getElementById('report-staff-name');
+        const reportDateEl = document.getElementById('report-date');
+        const dayReportListEl = document.getElementById('day-report-list');
+        const closeReportBtn = document.getElementById('close-report-btn');
+
+        // --- Initialize Map ---
+        function initializeMap() {
+            map = L.map('map').setView([11.0168, 76.9558], 13); 
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            blueIcon = new L.Icon({
+                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+                shadowUrl: null, iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [0, 0]
+            });
+            greyIcon = new L.Icon({
+                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png',
+                shadowUrl: null, iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [0, 0]
+            });
+            
+            drawnItems = new L.FeatureGroup();
+            map.addLayer(drawnItems);
+            
+            drawControl = new L.Draw.Circle(map, {
+                shapeOptions: { color: '#8B5CF6', fillColor: '#C4B5FD', fillOpacity: 0.5 }
+            });
+
+            map.on(L.Draw.Event.CREATED, (e) => {
+                tempGeofenceData = { center: e.layer.getLatLng(), radius: e.layer.getRadius() };
+                openCreateGeofenceModal();
+            });
+            map.on(L.Draw.Event.DRAWSTART, () => { if (createGeofenceBtn) { createGeofenceBtn.disabled = true; createGeofenceBtn.textContent = "Drawing..."; } });
+            map.on(L.Draw.Event.DRAWSTOP, () => { if (createGeofenceBtn) { createGeofenceBtn.disabled = false; createGeofenceBtn.textContent = "Create New Geofence (Circle)"; } });
+            map.on('draw:canceled', () => { tempGeofenceData = null; });
+            
+             // Disable map interactions for search and filter button
+             [searchInput, filterIconBtn].forEach(el => {
+                 if (el) {
+                     const container = el.closest('div') || el;
+                     if (container) { 
+                         L.DomEvent.disableClickPropagation(container); 
+                         L.DomEvent.disableScrollPropagation(container); 
+                     }
+                 }
+             });
+        }
+
+        // --- Initialize Firebase ---
+        async function initialize() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        if (connectionStatusEl) { 
+                            connectionStatusEl.textContent = "Connected.";
+                            connectionStatusEl.classList.replace('text-red-400', 'text-green-400');
+                        }
+                        listenForStaffUpdates();
+                        listenForGeofenceUpdates();
+                    } else {
+                        signInAnonymously(auth).catch(err => { console.error("Anon sign-in failed:", err); if (connectionStatusEl) connectionStatusEl.textContent = "Auth Failed."; }); 
+                    }
+                });
+                signInAnonymously(auth);
+            } catch (error) {
+                console.error("Init Error:", error);
+                if (connectionStatusEl) connectionStatusEl.textContent = `Connection failed: ${error.message}`; 
+            }
+        }
+
+        // --- Database Listeners ---
+        function listenForStaffUpdates() {
+             if (!db) return; 
+            onSnapshot(collection(db, staffCollectionPath), (snapshot) => {
+                let changed = false;
+                if (snapshot.empty && Object.keys(staffDataCache).length > 0) { changed = true; staffDataCache = {}; }
+                snapshot.docChanges().forEach((change) => {
+                    changed = true;
+                    const id = change.doc.id, data = change.doc.data();
+                    if (change.type === "removed") {
+                        delete staffDataCache[id];
+                        if (map && staffMarkers[id]) map.removeLayer(staffMarkers[id]); delete staffMarkers[id]; 
+                        if (map && currentHistoryPath && currentHistoryPath.staffId === id) map.removeLayer(currentHistoryPath); currentHistoryPath = null; 
+                    } else {
+                        staffDataCache[id] = { id, data: data || {}, geofenceState: staffDataCache[id]?.geofenceState || {} }; 
+                    }
+                });
+                if (changed) {
+                    renderUI(); 
+                    if (searchInput?.value.trim().length > 0 && !searchResultsEl?.classList.contains('hidden')) { handleSearch(); }
+                    if (isFilterModalOpen) { populateFilterModal(); } 
+                }
+            }, (error) => { console.error("Staff listener error:", error); if (connectionStatusEl) connectionStatusEl.textContent = "DB Listen Error."; });
+        }
+        function listenForGeofenceUpdates() {
+             if (!db || !geofenceListEl || !drawnItems || !loadingGeofencesEl) return; 
+            onSnapshot(collection(db, geofenceCollectionPath), (snapshot) => {
+                geofenceListEl.innerHTML = '';
+                drawnItems.clearLayers(); geofencesCache = {};
+                if (snapshot.empty) { loadingGeofencesEl.textContent = "No geofences."; loadingGeofencesEl.style.display = 'block'; renderUI(); return; }
+                loadingGeofencesEl.style.display = 'none';
+                snapshot.forEach((doc) => {
+                    const fence = doc.data(), id = doc.id;
+                    if (!fence.center?.lat || !fence.center?.lng) { console.warn("Invalid fence center:", id); return; }
+                    const layer = L.circle(fence.center, { radius: fence.radius, color: '#8B5CF6', fillColor: '#C4B5FD', fillOpacity: 0.3 })
+                                  .bindTooltip(fence.name, { permanent: true, direction: 'center', className: 'leaflet-tooltip bg-gray-800 text-white border border-purple-400 px-1 py-0.5 rounded text-xs', opacity: 0.8 });
+                    drawnItems.addLayer(layer);
+                    geofencesCache[id] = { id, ...fence, layer };
+                    let assignText = (fence.assignedStaff?.[0] === 'all') ? "All Staff" : `${fence.assignedStaff?.length || 0} staff`;
+                    const li = document.createElement('div'); li.className = "flex justify-between items-center bg-gray-800 p-2 rounded";
+                    li.innerHTML = `<div class="flex-grow overflow-hidden mr-2"><span class="font-medium text-purple-300 block truncate" title="${escapeAttr(fence.name)}">${escapeHTML(fence.name)}</span><span class="text-xs text-gray-400">Assigned to: ${assignText}</span></div><div class="flex-shrink-0"><button class="edit-geofence-btn text-blue-400 hover:text-blue-200 text-sm font-medium mr-2" data-id="${id}">Edit</button><button class="delete-geofence-btn text-red-400 hover:text-red-200 text-sm font-medium" data-id="${id}">&times; Delete</button></div>`;
+                    geofenceListEl.appendChild(li);
+                });
+                renderUI();
+            }, (error) => { console.error("Geofence listener error:", error); loadingGeofencesEl.textContent = "Error loading."; });
+        }
+
+        // --- Save/Delete Functions ---
+        async function saveGeofence() {
+             if (!geofenceNameInput || !editGeofenceIdInput || !assignAllStaffCheckbox || !geofenceStaffListEl || !saveGeofenceBtn) return; 
+            const name = geofenceNameInput.value.trim(), editId = editGeofenceIdInput.value;
+            if (!name) { showMessage("Invalid Name", "Please enter a name."); return; }
+            let assignedStaff = assignAllStaffCheckbox.checked ? ["all"] : [...geofenceStaffListEl.querySelectorAll('input:checked')].map(cb => cb.value);
+            saveGeofenceBtn.disabled = true; saveGeofenceBtn.textContent = "Saving...";
+            try {
+                if (editId) {
+                    if (!geofencesCache[editId]) throw new Error("Fence not found.");
+                    await updateDoc(doc(db, geofenceCollectionPath, editId), { name, assignedStaff });
+                } else {
+                    if (!tempGeofenceData) throw new Error("No draw data.");
+                    await addDoc(collection(db, geofenceCollectionPath), { name, center: { lat: tempGeofenceData.center.lat, lng: tempGeofenceData.center.lng }, radius: tempGeofenceData.radius, assignedStaff });
+                } closeGeofenceModal();
+            } catch (error) { console.error("Save geofence error:", error); showMessage("Error", "Could not save geofence."); }
+            finally { if(saveGeofenceBtn){ saveGeofenceBtn.disabled = false; saveGeofenceBtn.textContent = "Save"; } }
+        }
+        async function deleteGeofence(id) {
+            if (!id || !geofencesCache[id]) return;
+            showConfirmation("Confirm Delete", `Delete "${escapeHTML(geofencesCache[id]?.name)}"?`, async () => {
+                try { await deleteDoc(doc(db, geofenceCollectionPath, id)); console.log("Fence deleted:", id); closeMessageModal(); }
+                catch (error) { console.error("Delete fence error:", error); showMessage("Error", "Could not delete."); }
+            });
+        }
+        async function confirmDeleteStaff(id, name) {
+            if (!id) return;
+            showConfirmation("Confirm Delete Staff", `PERMANENTLY delete "${escapeHTML(name)}"? This deletes all history.`, async () => {
+                try {
+                    const historyRef = collection(db, staffCollectionPath, id, "history"); const historySnap = await getDocs(historyRef);
+                    let batch = writeBatch(db), count = 0;
+                    historySnap.forEach(d => { batch.delete(d.ref); count++; if (count > 0 && count % 499 === 0) { batch.commit().then(() => batch = writeBatch(db)); } });
+                    await batch.commit(); await deleteDoc(doc(db, staffCollectionPath, id));
+                    console.log(`Staff ${id} deleted (${count} history points).`); closeMessageModal(); closeEditModal();
+                } catch (error) { console.error("Delete staff error:", error); showMessage("Error", "Could not delete staff/history."); }
+            });
+        }
+        
+        // Helper to get value from select/other input
+        function getSelectOtherValue(selectEl, otherEl) {
+            const selectedValue = selectEl.value;
+            if (selectedValue === 'Other') {
+                return otherEl.value.trim() || null;
+            }
+            return selectedValue || null;
+        }
+
+        // Helper to set value for select/other input
+        function setSelectOtherValue(selectEl, otherEl, value) {
+            if (!selectEl || !otherEl) return;
+            const options = Array.from(selectEl.options).map(opt => opt.value);
+            if (options.includes(value)) {
+                selectEl.value = value;
+                otherEl.classList.add('hidden');
+                otherEl.value = '';
+            } else if (value) { // Handle custom value
+                selectEl.value = 'Other';
+                otherEl.classList.remove('hidden');
+                otherEl.value = value;
+            } else { // Handle null/empty value
+                selectEl.value = '';
+                otherEl.classList.add('hidden');
+                otherEl.value = '';
+            }
+        }
+        
+        // Helper to manage all "Other" text inputs
+        function setupSelectOtherListeners() {
+            // Add Staff Modal
+            if (newStaffCompanySelect) newStaffCompanySelect.addEventListener('change', () => newStaffCompanyOther.classList.toggle('hidden', newStaffCompanySelect.value !== 'Other'));
+            if (newStaffBranchSelect) newStaffBranchSelect.addEventListener('change', () => newStaffBranchOther.classList.toggle('hidden', newStaffBranchSelect.value !== 'Other'));
+            if (newStaffDeptSelect) newStaffDeptSelect.addEventListener('change', () => newStaffDeptOther.classList.toggle('hidden', newStaffDeptSelect.value !== 'Other'));
+            
+            // Edit Staff Modal
+            if (editStaffCompanySelect) editStaffCompanySelect.addEventListener('change', () => editStaffCompanyOther.classList.toggle('hidden', editStaffCompanySelect.value !== 'Other'));
+            if (editStaffBranchSelect) editStaffBranchSelect.addEventListener('change', () => editStaffBranchOther.classList.toggle('hidden', editStaffBranchSelect.value !== 'Other'));
+            if (editStaffDeptSelect) editStaffDeptSelect.addEventListener('change', () => editStaffDeptOther.classList.toggle('hidden', editStaffDeptSelect.value !== 'Other'));
+        }
+
+        async function saveStaffInfo() {
+             if (!editStaffIdInput || !editStaffNameInput || !editStaffPhoneInput || !saveEditBtn) return; 
+            const id = editStaffIdInput.value;
+            const name = editStaffNameInput.value.trim();
+            const phone = editStaffPhoneInput.value.trim();
+            
+            if (!id || !name) { showMessage("Invalid Name", "Name cannot be empty."); return; }
+            if (!phone || phone.length !== 10 || !/^\d+$/.test(phone)) { showMessage("Invalid Phone", "Phone number must be 10 digits."); return; }
+
+            const company = getSelectOtherValue(editStaffCompanySelect, editStaffCompanyOther);
+            const branch = getSelectOtherValue(editStaffBranchSelect, editStaffBranchOther);
+            const dept = getSelectOtherValue(editStaffDeptSelect, editStaffDeptOther);
+
+            saveEditBtn.disabled = true; saveEditBtn.textContent = "Saving...";
+            try { 
+                await updateDoc(doc(db, staffCollectionPath, id), { 
+                    name, 
+                    phone,
+                    company,
+                    branch, 
+                    dept 
+                }); 
+                closeEditModal(); 
+            }
+            catch (error) { console.error("Save staff error:", error); showMessage("Error", "Failed to save info."); }
+            finally { if (saveEditBtn) { saveEditBtn.disabled = false; saveEditBtn.textContent = "Save"; } }
+        }
+        async function addNewStaff() {
+             if (!newStaffNameInput || !newStaffPhoneInput || !addStaffBtn) return; 
+            const name = newStaffNameInput.value.trim();
+            const phone = newStaffPhoneInput.value.trim();
+            
+            if (!name) { showMessage("Invalid Name", "Please enter a name."); return; }
+            if (!phone || phone.length !== 10 || !/^\d+$/.test(phone)) { showMessage("Invalid Phone", "Phone number must be 10 digits."); return; }
+            
+            const company = getSelectOtherValue(newStaffCompanySelect, newStaffCompanyOther);
+            const branch = getSelectOtherValue(newStaffBranchSelect, newStaffBranchOther);
+            const dept = getSelectOtherValue(newStaffDeptSelect, newStaffDeptOther);
+
+            addStaffBtn.disabled = true; addStaffBtn.textContent = "Adding...";
+            try {
+                // Check if phone number already exists
+                const q = query(collection(db, staffCollectionPath), where("phone", "==", phone));
+                const phoneSnapshot = await getDocs(q);
+                if (!phoneSnapshot.empty) {
+                    throw new Error(`Phone number ${phone} is already registered.`);
+                }
+                
+                let maxId = 0; Object.values(staffDataCache).forEach(s => { const num = parseInt(s.id?.split('_')[1] || 0); if (!isNaN(num) && num > maxId) maxId = num; });
+                const newId = `staff_${maxId + 1}`;
+                
+                await setDoc(doc(db, staffCollectionPath, newId), { 
+                    originalId: newId, 
+                    name, 
+                    phone,
+                    company,
+                    branch, 
+                    dept, 
+                    isTracking: false, 
+                    battery: null, 
+                    live_location: {}, 
+                    status: "Offline" 
+                });
+                closeAddStaffModal();
+            } catch (error) { console.error("Add staff error:", error); showMessage("Error", `Could not add staff: ${error.message}`); }
+            finally { if (addStaffBtn) { addStaffBtn.disabled = false; addStaffBtn.textContent = "Add Staff"; } }
+        }
+        async function saveStaffStatus() {
+             if (!editStatusStaffIdInput || !editStatusSelect || !editStatusOtherInput || !saveStatusBtn) return; 
+            const id = editStatusStaffIdInput.value; let status = editStatusSelect.value;
+            if (status === 'Other') status = editStatusOtherInput.value.trim();
+            if (!id || !status) { showMessage("Invalid Status", "Status cannot be empty."); return; }
+            saveStatusBtn.disabled = true; saveStatusBtn.textContent = "Saving...";
+            try {
+                let updates = { status }; if (status === 'Offline') { updates.isTracking = false; }
+                await updateDoc(doc(db, staffCollectionPath, id), updates); closeEditStatusModal();
+            } catch (error) { console.error("Save status error:", error); showMessage("Error", "Failed to save status."); }
+            finally { if (saveStatusBtn) { saveStatusBtn.disabled = false; saveStatusBtn.textContent = "Save"; } }
+        }
+
+        // --- UI Rendering & Updates (Modified for Filtering) ---
+        function renderUI() {
+             if (!staffListEl) return;
+            staffListEl.innerHTML = ''; 
+
+            const filteredStaffResult = applyCurrentFilters();
+            const filteredStaff = Array.isArray(filteredStaffResult) ? filteredStaffResult : []; 
+
+            const sortedStaff = filteredStaff.sort((a, b) => {
+                if (!a || !a.data) return 1; 
+                if (!b || !b.data) return -1; 
+                const dataA = a.data, dataB = b.data;
+                if (dataA.isTracking && !dataB.isTracking) return -1;
+                if (!dataA.isTracking && dataB.isTracking) return 1;
+                return (dataA.name || '').localeCompare(dataB.name || '');
+            });
+
+            if (sortedStaff.length === 0) {
+                 if (loadingStaffEl) {
+                     loadingStaffEl.style.display = 'block';
+                     loadingStaffEl.textContent = "No staff match the current filters.";
+                 }
+                 if (Object.keys(staffDataCache).length === 0 && loadingStaffEl) {
+                      loadingStaffEl.textContent = "No staff found. Add new staff.";
+                 }
+            } else {
+                if (loadingStaffEl) loadingStaffEl.style.display = 'none';
+                sortedStaff.forEach(staff => {
+                    if (staff && staff.id && staff.data) updateStaffCard(staff.id, staff.data);
+                });
+            }
+
+            // Update map markers based on filter
+            Object.values(staffDataCache).forEach(staff => {
+                 if (!staff || !staff.data) return;
+                const isVisible = sortedStaff.some(s => s.id === staff.id);
+                updateMapMarker(staff.id, staff.data, isVisible);
+                const problemState = checkGeofenceAlerts(staff.id, staff.data, true) || { isProblem: false }; 
+                flashStaffCard(staff.id, isVisible && problemState.isProblem); 
+            });
+            
+            updateFilterIconState(); 
+        }
+
+        /**
+         * getCardStatus
+         * NEW: This function determines the card status based on heartbeat
+         */
+        function getCardStatus(data) {
+            if (data.isTracking) {
+                const lastSeen = data.live_location?.timestamp?.toMillis() || 0;
+                const now = Date.now();
+                if ((now - lastSeen) > HEARTBEAT_THRESHOLD_MS) {
+                    return { text: "LIVE (No Signal)", color: "border-orange-500", raw: "no-signal" };
+                }
+                return { text: "Live", color: "border-green-500", raw: "live" };
+            } else if (data.live_location?.timestamp) {
+                return { text: `Last seen: ${formatTimestamp(data.live_location.timestamp)}`, color: "border-yellow-500", raw: "Offline" };
+            }
+            return { text: "Offline", color: "border-gray-500", raw: "Offline" };
+        }
+
+        function updateStaffCard(id, data) { 
+             if (!staffListEl || !data || !id) return; 
+            let card = document.getElementById(`staff-card-${id}`); if (!card) { card = document.createElement('div'); card.id = `staff-card-${id}`; card.className = "staff-card-clickable bg-gray-800 p-4 rounded-lg shadow-md border-l-4"; card.dataset.id = id; }
+            staffListEl.appendChild(card);
+
+            // Get status from new heartbeat function
+            const cardStatus = getCardStatus(data);
+            let sTxt = cardStatus.text;
+            let sCol = cardStatus.color;
+
+            let bTxt = "N/A", bCol = "text-gray-400";
+            if (data.battery != null) { 
+                bTxt = `${data.battery}%`;
+                if (data.battery > 50) bCol = "text-green-400"; 
+                else if (data.battery > 20) bCol = "text-yellow-400"; 
+                else bCol = "text-red-400"; 
+            }
+            
+            const status = data.status || (data.isTracking ? 'Tracking' : 'Offline');
+            const dept = data.dept || 'Unassigned';
+            const branch = data.branch || 'Unassigned';
+            const name = data.name || 'Unnamed Staff'; 
+            const phone = data.phone || ''; 
+            const company = data.company || 'N/A';
+            const safeId = id || ''; 
+
+            const locEl = document.getElementById(`location-text-${id}`); let locTxt = locEl?.innerHTML || `Location: <button class="find-location-btn" data-id="${escapeAttr(safeId)}">(Find area)</button>`; if (!locEl?.querySelector('span')) locTxt = `Location: <button class="find-location-btn" data-id="${escapeAttr(safeId)}">(Find area)</button>`;
+            
+            card.innerHTML = `<div class="flex justify-between items-start mb-2"><div><h3 class="text-xl font-bold">${escapeHTML(name)} <span class="text-base text-gray-400">(${escapeHTML(dept)})</span></h3><p class="text-sm text-gray-400">Company: ${escapeHTML(company)}</p><p class="text-sm text-gray-400">Branch: ${escapeHTML(branch)}</p></div><div class="flex items-center space-x-2 shrink-0"><span class="text-sm ${bCol}">${bTxt}</span><div class="w-3 h-3 rounded-full ${data.isTracking ? 'bg-green-500':'bg-gray-500'}"></div></div></div><p class="text-sm text-gray-400 mb-1">${sTxt}</p><p class="text-sm mb-2">Status: <span class="text-blue-400">${escapeHTML(status)}</span> <button class="edit-status-btn text-blue-400 hover:text-blue-300 text-xs ml-1" data-id="${escapeAttr(safeId)}" data-status="${escapeAttr(status)}">(Edit)</button></p><p id="location-text-${id}" class="location-text mb-2">${locTxt}</p><div class="grid grid-cols-3 gap-2"><button class="view-day-report-btn w-full px-3 py-1.5 bg-cyan-600 text-xs rounded hover:bg-cyan-700" data-id="${escapeAttr(safeId)}">Day Report</button><button class="view-history-btn w-full px-3 py-1.5 bg-blue-600 text-xs rounded hover:bg-blue-700" data-id="${escapeAttr(safeId)}">History</button><button class="edit-name-btn w-full px-3 py-1.5 bg-gray-600 text-xs rounded hover:bg-gray-700" data-id="${escapeAttr(safeId)}" data-name="${escapeAttr(name)}" data-phone="${escapeAttr(phone)}" data-company="${escapeAttr(company)}" data-branch="${escapeAttr(branch)}" data-dept="${escapeAttr(dept)}">Edit Info</button></div>`;
+            card.classList.remove("border-gray-500", "border-green-500", "border-yellow-500", "border-orange-500"); 
+            card.classList.add(sCol);
+         }
+         
+        function updateMapMarker(id, data, visible) { 
+             if (!map || !data) return; const { lat, lng, timestamp } = data.live_location || {}; const marker = staffMarkers[id], latLng = (lat != null && lng != null) ? [lat, lng] : null, status = data.status || (data.isTracking ? 'Tracking' : 'Offline'), name = data.name || 'Unnamed Staff'; 
+            if (!visible) { if (marker) map.removeLayer(marker); delete staffMarkers[id]; return; }
+
+            const cardStatus = getCardStatus(data); // Get heartbeat status
+
+            if (data.isTracking && latLng) { 
+                const label = `${escapeHTML(name)} (${data.battery||'N/A'}%)<br>Status: ${escapeHTML(status)}`; 
+                if (marker) { 
+                    marker.setLatLng(latLng).setIcon(blueIcon); 
+                    if (marker.getTooltip()) marker.getTooltip().setContent(label); 
+                } else {
+                    staffMarkers[id] = L.marker(latLng, { icon: blueIcon }).addTo(map).bindTooltip(label, { permanent: true, direction: 'top', offset: [0, -10], className: 'staff-marker-label' }); 
+                }
+            }
+            else if (!data.isTracking && latLng) { 
+                const sTxt = `Offline - Last seen: ${formatTimestamp(timestamp)}`, label = `${escapeHTML(name)} (${sTxt})`; 
+                if (marker) { 
+                    marker.setLatLng(latLng).setIcon(greyIcon); 
+                    if (marker.getTooltip()) marker.getTooltip().setContent(label); 
+                } else {
+                    staffMarkers[id] = L.marker(latLng, { icon: greyIcon }).addTo(map).bindTooltip(label, { permanent: true, direction: 'top', offset: [0, -10], className: 'staff-marker-label' }); 
+                }
+            }
+            else { if (marker) map.removeLayer(marker); delete staffMarkers[id]; }
+
+            // Add click event to the marker if it exists
+            if (staffMarkers[id]) {
+                staffMarkers[id].off('click').on('click', () => {
+                    scrollToCard(id);
+                });
+            }
+         }
+         
+        function flashStaffCard(id, flash) { 
+            const card = document.getElementById(`staff-card-${id}`); 
+            if (card) card.classList.toggle('geofence-alert', !!flash); 
+        }
+
+        // --- History & Geofence Logic ---
+        async function fetchAndShowHistory(id, date) { 
+            if (!map || !id || !date) return; 
+            if (currentHistoryPath) map.removeLayer(currentHistoryPath); currentHistoryPath = null; 
+            
+            try { 
+                const startOfDay = new Date(date); startOfDay.setHours(0, 0, 0, 0);
+                const endOfDay = new Date(date); endOfDay.setHours(23, 59, 59, 999);
+                
+                const startTimestamp = Timestamp.fromDate(startOfDay);
+                const endTimestamp = Timestamp.fromDate(endOfDay);
+                
+                const ref = collection(db, staffCollectionPath, id, "history");
+                const q = query(ref, where("timestamp", ">=", startTimestamp), where("timestamp", "<=", endTimestamp)); 
+                
+                const snap = await getDocs(q); 
+                if (snap.empty) { showMessage("No History", "No history found for this date."); return; }
+                
+                const points = snap.docs
+                    .map(d => d.data())
+                    .filter(d => d.location?.latitude != null && d.location?.longitude != null)
+                    .sort((a, b) => a.timestamp.seconds - b.timestamp.seconds); // Sort by time
+
+                if (points.length === 0) { showMessage("Not Enough Data", "No valid history points for this date."); return; }
+                
+                const pathGroup = new L.featureGroup(); // Create a group
+                pathGroup.staffId = id; // Tag the group with the staff ID
+                
+                // 1. Add clickable circle markers for each point
+                points.forEach(point => {
+                    const latLng = [point.location.latitude, point.location.longitude];
+                    const timeString = point.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    
+                    L.circleMarker(latLng, {
+                        radius: 5,
+                        color: 'red',
+                        weight: 2,
+                        fillColor: 'red',
+                        fillOpacity: 0.7
+                    })
+                    .bindPopup(timeString)
+                    .addTo(pathGroup);
+                });
+
+                // 2. Add the polyline
+                if (points.length > 1) {
+                    const latLngs = points.map(p => [p.location.latitude, p.location.longitude]);
+                    L.polyline(latLngs, { color: 'red', weight: 3 }).addTo(pathGroup);
+                }
+
+                pathGroup.addTo(map);
+                map.fitBounds(pathGroup.getBounds().pad(0.1)); 
+                currentHistoryPath = pathGroup; // Store the group
+
+            } catch (error) { console.error("History path error:", error); showMessage("Error", "Could not load history path."); }
+        }
+
+        /**
+         * NEW: Day Report Generator
+         */
+        async function fetchAndShowDayReport(id) {
+            if (!id || !dayReportModal) return;
+
+            const staff = staffDataCache[id];
+            if (!staff) return;
+
+            // 1. Setup Modal UI
+            reportStaffNameEl.textContent = staff.data.name || 'Unnamed';
+            const today = new Date();
+            reportDateEl.textContent = today.toLocaleDateString();
+            dayReportListEl.innerHTML = '<p class="text-gray-400">Loading report...</p>';
+            dayReportModal.classList.remove('hidden');
+
+            // 2. Fetch Today's History
+            try {
+                const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+                const endOfDay = new Date(); endOfDay.setHours(23, 59, 59, 999);
+                const startTimestamp = Timestamp.fromDate(startOfDay);
+                const endTimestamp = Timestamp.fromDate(endOfDay);
+                
+                const ref = collection(db, staffCollectionPath, id, "history");
+                const q = query(ref, where("timestamp", ">=", startTimestamp), where("timestamp", "<=", endTimestamp)); 
+                
+                const snap = await getDocs(q);
+                if (snap.empty) {
+                    dayReportListEl.innerHTML = '<p class="text-gray-400">No history found for today.</p>';
+                    return;
+                }
+
+                const points = snap.docs
+                    .map(d => d.data())
+                    .filter(d => d.timestamp)
+                    .sort((a, b) => a.timestamp.seconds - b.timestamp.seconds); // Sort by time
+
+                if (points.length === 0) {
+                    dayReportListEl.innerHTML = '<p class="text-gray-400">No valid points for today.</p>';
+                    return;
+                }
+
+                // 3. Generate Report HTML
+                let reportHTML = '';
+                let lastTimestamp = null;
+                const timeFmt = (ts) => ts.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                points.forEach(point => {
+                    const currentTimestamp = point.timestamp.toMillis();
+                    const timeString = timeFmt(point.timestamp);
+
+                    // Check for a gap
+                    if (lastTimestamp) {
+                        const diffMins = (currentTimestamp - lastTimestamp) / (1000 * 60);
+                        if (diffMins > GAP_THRESHOLD_MINS) {
+                            reportHTML += `<p class="text-yellow-400 font-bold">--- GAP (${Math.round(diffMins)} mins) ---</p>`;
+                        }
+                    }
+
+                    reportHTML += `<p><span class="text-cyan-400">${timeString}</span>: Location recorded.</p>`;
+                    lastTimestamp = currentTimestamp;
+                });
+
+                dayReportListEl.innerHTML = reportHTML;
+
+            } catch (error) {
+                console.error("Day report error:", error);
+                dayReportListEl.innerHTML = '<p class="text-red-400">Error loading report.</p>';
+            }
+        }
+
+        function checkGeofenceAlerts(id, data, alert) { 
+             const def = { isProblem: false, isInsideAnyAssignedFence: false, isAssignedToAnyFence: false }; 
+             if (!Object.keys(geofencesCache).length || !staffDataCache[id] || !data) return def;
+            if (!data.isTracking || !data.live_location?.lat) { if (staffDataCache[id].geofenceState && Object.keys(staffDataCache[id].geofenceState).length > 0 && alert) staffDataCache[id].geofenceState = {}; return def; }
+            const ll = L.latLng(data.live_location.lat, data.live_location.lng), pS = staffDataCache[id].geofenceState || {}, nS = { ...pS }; let inside = false, assigned = false;
+            for (const fId in geofencesCache) { const f = geofencesCache[fId]; if (!f) continue; const all = (f.assignedStaff||[]).includes("all"), staff = (f.assignedStaff||[]).includes(id); if (!all && !staff) { delete nS[fId]; continue; } assigned = true; if (!f.center?.lat || !f.center?.lng) continue; const fLL = L.latLng(f.center.lat, f.center.lng); const dist = map.distance(ll, fLL), isIn = typeof f.radius ==='number' && dist <= f.radius; if (isIn) { nS[fId] = true; inside = true; if (!pS[fId] && alert) { console.log(`${data.name || id} ENTERED ${f.name || fId}`); showMessage("Geofence Alert", `${escapeHTML(data.name || id)} ENTERED "${escapeHTML(f.name || fId)}".`); } } else { nS[fId] = false; if (pS[fId] && alert) { console.log(`${data.name || id} LEFT ${f.name || fId}`); showMessage("Geofence Alert", `${escapeHTML(data.name || id)} LEFT "${escapeHTML(f.name || fId)}".`); } } } 
+            if (alert) staffDataCache[id].geofenceState = nS; const problem = data.isTracking && assigned && !inside; return { isProblem: problem, isInsideAnyAssignedFence: inside, isAssignedToAnyFence: assigned };
+         }
+        
+        // --- Modal Control Functions ---
+        function openAddStaffModal() { 
+             if (!addStaffModal || !newStaffNameInput) return; 
+            newStaffNameInput.value=''; 
+            newStaffPhoneInput.value = '';
+            setSelectOtherValue(newStaffCompanySelect, newStaffCompanyOther, '');
+            setSelectOtherValue(newStaffBranchSelect, newStaffBranchOther, '');
+            setSelectOtherValue(newStaffDeptSelect, newStaffDeptOther, '');
+            addStaffModal.classList.remove('hidden'); 
+            newStaffNameInput.focus(); 
+        }
+        function closeAddStaffModal() { if (addStaffModal) addStaffModal.classList.add('hidden'); }
+        
+        function openEditModal(id, name, phone, company, branch, dept) { 
+             if (!editModal) return; 
+            editStaffIdInput.value=id; 
+            editStaffNameInput.value=name||''; 
+            editStaffPhoneInput.value = phone || ''; 
+            setSelectOtherValue(editStaffCompanySelect, editStaffCompanyOther, company);
+            setSelectOtherValue(editStaffBranchSelect, editStaffBranchOther, branch);
+            setSelectOtherValue(editStaffDeptSelect, editStaffDeptOther, dept);
+            
+            editModal.classList.remove('hidden'); 
+            editStaffNameInput.focus(); 
+        }
+        function closeEditModal() { if (editModal) editModal.classList.add('hidden'); }
+        
+        function openEditStatusModal(id, status) { if (!editStatusModal) return; editStatusStaffIdInput.value=id; const opts = [...editStatusSelect.options].map(o=>o.value); if (opts.includes(status)) { editStatusSelect.value=status; editStatusOtherInput.classList.add('hidden'); editStatusOtherInput.value=''; } else { editStatusSelect.value='Other'; editStatusOtherInput.classList.remove('hidden'); editStatusOtherInput.value=status||''; } editStatusModal.classList.remove('hidden'); editStatusSelect.focus(); }
+        function closeEditStatusModal() { if (editStatusModal) editStatusModal.classList.add('hidden'); }
+        function openCreateGeofenceModal() { if (!geofenceModal) return; geofenceModalTitle.textContent="Create"; editGeofenceIdInput.value=''; geofenceNameInput.value=''; populateGeofenceStaffList(); geofenceModal.classList.remove('hidden'); geofenceNameInput.focus(); }
+        function openEditGeofenceModal(id) { const f = geofencesCache[id]; if (!f || !geofenceModal) return; geofenceModalTitle.textContent="Edit"; editGeofenceIdInput.value=id; geofenceNameInput.value=f.name; populateGeofenceStaffList(f.assignedStaff); geofenceModal.classList.remove('hidden'); geofenceNameInput.focus(); }
+        function closeGeofenceModal() { if (geofenceModal) geofenceModal.classList.add('hidden'); tempGeofenceData=null; if (editGeofenceIdInput) editGeofenceIdInput.value=''; if (geofenceModalTitle) geofenceModalTitle.textContent="Create"; if (drawControl?.enabled()) drawControl.disable(); }
+        function showMessage(title, text) { if (!messageModal) return; messageTitle.textContent=title; messageText.textContent=text; const newOk = messageOkBtn.cloneNode(true); newOk.id='message-ok-btn'; newOk.textContent="OK"; newOk.className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700"; newOk.addEventListener('click', closeMessageModal, {once:true}); messageCancelBtn.classList.add('hidden'); messageButtonsEl.innerHTML=''; messageButtonsEl.appendChild(newOk); messageOkBtn=newOk; messageModal.classList.remove('hidden'); }
+        function showConfirmation(title, text, onConfirm) { if (!messageModal) return; messageTitle.textContent=title; messageText.textContent=text; const newOk = messageOkBtn.cloneNode(true); newOk.id='message-ok-btn'; newOk.textContent="Yes, Confirm"; newOk.className="px-4 py-2 bg-red-600 rounded hover:bg-red-700"; newOk.addEventListener('click', ()=>{if(typeof onConfirm==='function') onConfirm();}, {once:true}); const newCancel = messageCancelBtn.cloneNode(true); newCancel.id='message-cancel-btn'; newCancel.classList.remove('hidden'); newCancel.addEventListener('click', closeMessageModal, {once:true}); messageButtonsEl.innerHTML=''; messageButtonsEl.appendChild(newCancel); messageButtonsEl.appendChild(newOk); messageOkBtn=newOk; messageCancelBtn=newCancel; messageModal.classList.remove('hidden'); }
+        function closeMessageModal() { if (messageModal) messageModal.classList.add('hidden'); }
+
+        // --- History Modal Functions ---
+        function openHistoryModal(id) {
+            const staff = staffDataCache[id];
+            if (!historyModal || !staff) return;
+            
+            historyStaffIdInput.value = id;
+            historyStaffNameEl.textContent = staff.data.name || 'Unnamed';
+            
+            // Set date picker constraints (max today, min 45 days ago)
+            const today = new Date();
+            const minDate = new Date();
+            minDate.setDate(today.getDate() - 45);
+
+            const formatDate = (date) => date.toISOString().split('T')[0];
+            
+            historyDatePicker.value = formatDate(today);
+            historyDatePicker.max = formatDate(today);
+            historyDatePicker.min = formatDate(minDate);
+
+            historyModal.classList.remove('hidden');
+        }
+        
+        function closeHistoryModal() {
+            if (historyModal) historyModal.classList.add('hidden');
+        }
+        
+        // --- Day Report Modal Functions ---
+        function closeDayReportModal() {
+            if (dayReportModal) dayReportModal.classList.add('hidden');
+        }
+
+        // --- Location Fetch ---
+        async function fetchLocationName(id) { 
+            const s = staffDataCache[id]; const el = document.getElementById(`location-text-${id}`); 
+            if (!s?.data?.live_location || s.data.live_location.lat == null) { 
+                showMessage("Error", "No location data."); return; 
+            } 
+            if (!el) return; 
+            el.innerHTML=`Location: <span class="text-yellow-400">Finding...</span>`; 
+            try { 
+                const {lat, lng} = s.data.live_location; 
+                const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16`); 
+                if (!res.ok) throw new Error(`HTTP ${res.status}`); const d = await res.json(); 
+                let name = "Found"; const a = d?.address||{}; 
+                if (d?.display_name) { name = a.road||a.suburb||a.neighbourhood||a.city_district||"Unknown"; if (a.city&&name==="Unknown") name=a.city; if (name==="Unknown") name=d.display_name.split(',').slice(0,2).join(', '); } 
+                else if (d?.error) name=d.error; el.innerHTML=`Location: <span class="text-green-400">${escapeHTML(name)}</span>`; 
+            } catch (error) { 
+                console.error("Reverse geocode error:", error); el.innerHTML=`Location: <span class="text-red-400">Failed.</span>`; 
+                setTimeout(() => { const currEl = document.getElementById(`location-text-${id}`); if (currEl) currEl.innerHTML = `Location: <button class="find-location-btn" data-id="${id}">(Find area)</button>`; }, 3000); 
+            } 
+        }
+
+        // --- Misc Helpers ---
+        function populateGeofenceStaffList(assigned=[]) { 
+             if (!geofenceStaffListEl) return; 
+            geofenceStaffListEl.innerHTML=''; 
+            const sorted = Object.values(staffDataCache).sort((a,b)=>(a.data?.name||'').localeCompare(b.data?.name||'')); 
+            if (sorted.length===0) { geofenceStaffListEl.innerHTML='<p class="text-gray-400">No staff.</p>'; return; } 
+            const all = assigned.includes("all"); 
+            if (assignAllStaffCheckbox) assignAllStaffCheckbox.checked=all; 
+            sorted.forEach(s => { 
+                if (!s?.id || !s.data) return; 
+                const checked = all || assigned.includes(s.id); 
+                const div = document.createElement('div'); 
+                div.className='flex items-center text-white'; 
+                div.innerHTML=`<input type="checkbox" id="geo-assign-${s.id}" value="${s.id}" class="h-4 w-4 text-purple-600 rounded bg-gray-700" ${checked?'checked':''} ${all?'disabled':''}>
+                                <label for="geo-assign-${s.id}" class="ml-2 text-sm">${escapeHTML(s.data.name||'N/A')} <span class="text-gray-400">(${escapeHTML(s.data.branch||'N/A')})</span></label>`; 
+                geofenceStaffListEl.appendChild(div); 
+            }); 
+        }
+        function panToStaff(id) { 
+            if (!map || !id) return; 
+            if (currentHistoryPath) map.removeLayer(currentHistoryPath); currentHistoryPath = null; 
+            const marker = staffMarkers[id]; 
+            if (marker) try { map.flyTo(marker.getLatLng(), 15); } catch (e) { console.error("FlyTo error:", e); } 
+            highlightCard(id); // Highlight card when panning
+        }
+        function scrollToCard(id) {
+            if (!staffListEl) return;
+            const card = document.getElementById(`staff-card-${id}`);
+            if (card) {
+                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                highlightCard(id);
+            }
+        }
+        function highlightCard(id) {
+            const card = document.getElementById(`staff-card-${id}`);
+            if (card) {
+                card.classList.add('card-highlight');
+                // Remove highlight after animation ends
+                setTimeout(() => {
+                    card.classList.remove('card-highlight');
+                }, 1500); // Must match animation duration
+            }
+        }
+        function escapeAttr(s) { return String(s==null?'':s).replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/&/g,'&amp;'); } 
+        function escapeHTML(s) { return String(s==null?'':s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'})[m]); } 
+        function formatDuration(s) { s=Math.floor(s||0); const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60; const p=n=>String(n).padStart(2,'0'); return `${p(h)}:${p(m)}:${p(sec)}`; } 
+        function formatTimestamp(ts) { if (!ts) return "N/A"; try { return ts.toDate().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); } catch(e){ return "Invalid"; } }
+
+        // --- Search Logic ---
+        function handleSearch() { 
+             if (!searchInput || !searchResultsEl) return; 
+            const searchTerm = searchInput.value.trim().toLowerCase();
+            searchResultsEl.innerHTML = '';
+            if (searchTerm.length < 1) {
+                searchResultsEl.classList.add('hidden');
+                return;
+            }
+            const results = Object.values(staffDataCache).filter(staff => {
+                 if (!staff || !staff.data) return false; 
+                const name = (staff.data.name || '').toLowerCase();
+                const branch = (staff.data.branch || '').toLowerCase();
+                const dept = (staff.data.dept || '').toLowerCase();
+                const phone = (staff.data.phone || '').toLowerCase(); 
+                const company = (staff.data.company || '').toLowerCase(); 
+                return name.includes(searchTerm) || branch.includes(searchTerm) || dept.includes(searchTerm) || phone.includes(searchTerm) || company.includes(searchTerm);
+            }).slice(0, 10); 
+
+            if (results.length > 0) {
+                results.forEach(staff => {
+                     if (!staff || !staff.id || !staff.data) return; 
+                    const div = document.createElement('div');
+                    div.dataset.id = staff.id;
+                    const name = staff.data.name || 'Unnamed Staff';
+                    const branch = staff.data.branch || 'Unassigned';
+                    const dept = staff.data.dept || 'Unassigned';
+                    div.innerHTML = `
+                        <div>${escapeHTML(name)}</div>
+                        <div class="staff-details">${escapeHTML(branch)} - ${escapeHTML(dept)}</div>
+                    `;
+                    searchResultsEl.appendChild(div);
+                });
+                searchResultsEl.classList.remove('hidden');
+            } else {
+                searchResultsEl.classList.add('hidden');
+            }
+         }
+        
+        // --- Filter Modal Logic ---
+
+        function openFilterModal() {
+             if (!filterModal) return;
+             // Copy current applied filters to temporary state for editing in modal
+             tempFilterState = {
+                 companies: new Set(currentFilterState.companies),
+                 branches: new Set(currentFilterState.branches),
+                 departments: new Set(currentFilterState.departments),
+                 staffIds: new Set(currentFilterState.staffIds),
+                 statuses: new Set(currentFilterState.statuses)
+             };
+             isFilterModalOpen = true; // Set flag
+             populateFilterModal(); // Populate based on temp state
+             filterModal.classList.remove('hidden');
+        }
+
+        function closeFilterModal() {
+             if (filterModal) filterModal.classList.add('hidden');
+             isFilterModalOpen = false; // Unset flag
+        }
+
+        // Populates ALL sections based on CURRENT staffDataCache and reflects tempFilterState
+        function populateFilterModal() {
+             if (!filterCompanyList || !filterBranchList || !filterDeptList || !filterStaffList || !filterStatusList) return; 
+             
+             // 1. Companies (Available options based on all staff)
+            const allStaff = Object.values(staffDataCache);
+            const allCompanies = new Set(allStaff.map(s => s.data?.company || 'Unassigned').filter(b => b));
+            populateCheckboxList(filterCompanyList, [...allCompanies].sort(), tempFilterState.companies, 'company');
+            
+             // 2. Branches (Available options based on TEMP selected companies)
+             updateBranchOptions(); // This will use tempFilterState.companies
+
+             // 3. Departments (Available options based on TEMP selected companies/branches)
+             updateDepartmentOptions(); // This will use tempFilterState.companies and tempFilterState.branches
+
+             // 4. Staff (Available options based on TEMP selected companies/branches/depts)
+             updateStaffOptions(); 
+
+             // 5. Statuses (Static options, just reflect TEMP selection)
+             updateStatusOptions(); 
+        }
+        
+        // Updates Branch options based on TEMP selected companies
+        function updateBranchOptions() {
+             if (!filterBranchList) return; 
+            const selectedCompanies = tempFilterState.companies; 
+            const allStaff = Object.values(staffDataCache);
+            
+             // Get all possible branches from the entire staff list
+            const allBranches = new Set(allStaff.map(s => s.data?.branch || 'Unassigned').filter(b => b));
+            
+             // Find which branches are "available" based on selected companies
+            const availableBranches = new Set(
+                 allStaff
+                     .filter(s => selectedCompanies.size === 0 || selectedCompanies.has(s.data?.company || 'Unassigned'))
+                     .map(s => s.data?.branch || 'Unassigned')
+                     .filter(b => b)
+            );
+            
+             // Create option objects { value, text, disabled }
+            const branchOptions = [...allBranches].sort().map(branch => ({
+                 value: branch,
+                 text: branch,
+                 disabled: selectedCompanies.size > 0 && !availableBranches.has(branch) // Disable if not in available set
+            }));
+
+            populateCheckboxList(filterBranchList, branchOptions, tempFilterState.branches, 'branch');
+        }
+
+        // Updates Department options based on TEMP selected companies/branches
+        function updateDepartmentOptions() {
+             if (!filterDeptList) return; 
+            const selectedCompanies = tempFilterState.companies; 
+            const selectedBranches = tempFilterState.branches;
+            const allStaff = Object.values(staffDataCache);
+            
+            const allDepts = new Set(allStaff.map(s => s.data?.dept || 'Unassigned').filter(d => d));
+            
+            const availableDepts = new Set(
+                 allStaff
+                     .filter(s => 
+                         (selectedCompanies.size === 0 || selectedCompanies.has(s.data?.company || 'Unassigned')) &&
+                         (selectedBranches.size === 0 || selectedBranches.has(s.data?.branch || 'Unassigned'))
+                     )
+                     .map(s => s.data?.dept || 'Unassigned')
+                     .filter(d => d)
+            );
+            
+            const deptOptions = [...allDepts].sort().map(dept => ({
+                 value: dept,
+                 text: dept,
+                 disabled: (selectedCompanies.size > 0 || selectedBranches.size > 0) && !availableDepts.has(dept)
+            }));
+            
+            populateCheckboxList(filterDeptList, deptOptions, tempFilterState.departments, 'dept');
+        }
+        
+        // Updates Staff options based on TEMP selected companies/branches/departments
+        function updateStaffOptions() {
+             if (!filterStaffList) return; 
+            const selectedCompanies = tempFilterState.companies;
+            const selectedBranches = tempFilterState.branches;
+            const selectedDepts = tempFilterState.departments;
+            const allStaff = Object.values(staffDataCache);
+
+            const allStaffOptions = allStaff.map(s => ({ 
+                value: s.id, 
+                text: s.data?.name || 'Unnamed Staff',
+                company: s.data?.company || 'Unassigned',
+                branch: s.data?.branch || 'Unassigned',
+                dept: s.data?.dept || 'Unassigned'
+            })).sort((a,b) => a.text.localeCompare(b.text));
+
+            const staffOptions = allStaffOptions.map(staff => ({
+                ...staff,
+                disabled: 
+                    (selectedCompanies.size > 0 && !selectedCompanies.has(staff.company)) ||
+                    (selectedBranches.size > 0 && !selectedBranches.has(staff.branch)) ||
+                    (selectedDepts.size > 0 && !selectedDepts.has(staff.dept))
+            }));
+                                               
+            populateCheckboxList(filterStaffList, staffOptions, tempFilterState.staffIds, 'staff');
+        }
+        
+        // Update Status options (reflects TEMP selection)
+        function updateStatusOptions() {
+             if (!filterStatusList) return; 
+             // Re-populate the static list to ensure it's always correct
+             const statusOptions = [
+                { value: 'live', text: 'Live' },
+                { value: 'no-signal', text: 'Live (No Signal)' },
+                { value: 'Offline', text: 'Offline' },
+                { value: 'Driving to Client', text: 'Driving to Client' },
+                { value: 'At Job Site', text: 'At Job Site' },
+                { value: 'On Break', text: 'On Break' },
+                { value: 'End of Day', text: 'End of Day' },
+                { value: 'Other', text: 'Other' }
+             ];
+             populateCheckboxList(filterStatusList, statusOptions, tempFilterState.statuses, 'status');
+             checkSelectAllState('status'); 
+        }
+
+        // Helper to populate a checkbox list section
+        function populateCheckboxList(listElement, options, selectedSet, type) {
+             if (!listElement) return;
+            
+             const selectAllLabel = listElement.querySelector('label:first-child');
+             
+             listElement.innerHTML = ''; // Clear previous options
+             if (selectAllLabel) listElement.appendChild(selectAllLabel);
+
+             if (options.length > 0) {
+                 options.forEach(option => {
+                     const value = typeof option === 'object' ? option.value : option;
+                     const text = typeof option === 'object' ? option.text : option;
+                     const isDisabled = typeof option === 'object' ? option.disabled : false;
+                     
+                     // Check against the provided selectedSet (which is tempFilterState)
+                     const isChecked = !isDisabled && selectedSet.has(value); 
+                     
+                     const label = document.createElement('label');
+                     label.className = isDisabled ? 'disabled' : '';
+                     label.title = isDisabled ? `${text} (Not in current selection)` : text;
+                     
+                     label.innerHTML = `
+                         <input type="checkbox" value="${escapeAttr(value)}" data-type="${type}" 
+                                ${isChecked ? 'checked' : ''} ${isDisabled ? 'disabled' : ''}> 
+                         ${escapeHTML(text)}
+                     `;
+                     listElement.appendChild(label);
+                 });
+             } else {
+                 const p = document.createElement('p');
+                 p.className = 'text-gray-400 text-sm italic initial-message'; // Add class
+                 p.textContent = `No ${type} options available`;
+                 listElement.appendChild(p);
+             }
+             // Update Select All checkbox state for this section
+             checkSelectAllState(type); 
+        }
+        
+        // Reads selected items for a specific filter type FROM THE MODAL's checkboxes
+        function getSelectedFilterItemsFromModal(type) {
+            const listElement = document.getElementById(`filter-${type}-list`);
+            if (!listElement) return new Set();
+            const selected = new Set();
+            // Only add checked and *not* disabled items
+            listElement.querySelectorAll(`input[data-type="${type}"]:checked:not(:disabled):not(.filter-select-all)`).forEach(cb => {
+                selected.add(cb.value);
+            });
+            return selected;
+        }
+
+        // Handles changes in any filter checkbox WITHIN THE MODAL
+        function handleFilterChange(event) {
+            if (!event.target.matches('input[type="checkbox"]')) return;
+
+            const checkbox = event.target;
+            const type = checkbox.dataset.type;
+            const isSelectAll = checkbox.classList.contains('filter-select-all');
+
+            if (isSelectAll) {
+                handleSelectAllToggle(type, checkbox.checked);
+            } else {
+                // Update the TEMP filter state set based on individual checkbox change
+                tempFilterState[getSetKeyByType(type)] = getSelectedFilterItemsFromModal(type); 
+                checkSelectAllState(type); // Update 'Select All' based on individual items
+            }
+            
+            // Trigger cascading updates in the MODAL
+            if (type === 'company') {
+                // Clear downstream TEMP selections when company changes
+                tempFilterState.branches.clear();
+                tempFilterState.departments.clear();
+                tempFilterState.staffIds.clear();
+                updateBranchOptions();
+                updateDepartmentOptions();
+                updateStaffOptions();
+            } else if (type === 'branch') {
+                // Clear downstream TEMP selections when branch changes
+                tempFilterState.departments.clear();
+                tempFilterState.staffIds.clear();
+                updateDepartmentOptions();
+                updateStaffOptions();
+            } else if (type === 'dept') {
+                 // Clear downstream TEMP selections when dept changes
+                tempFilterState.staffIds.clear();
+                updateStaffOptions();
+            }
+         }
+
+        // Handles the "Select All" checkbox toggle WITHIN THE MODAL
+        function handleSelectAllToggle(type, isChecked) {
+            const listElement = document.getElementById(`filter-${type}-list`);
+            if (!listElement) return;
+            // Only toggle checkboxes that are NOT disabled
+            const checkboxes = listElement.querySelectorAll(`input[data-type="${type}"]:not(.filter-select-all):not(:disabled)`);
+            checkboxes.forEach(cb => cb.checked = isChecked);
+            
+            // Update the TEMP filter state set immediately
+            tempFilterState[getSetKeyByType(type)] = getSelectedFilterItemsFromModal(type);
+            
+            // Trigger cascade
+            if (type === 'company') {
+                tempFilterState.branches.clear(); tempFilterState.departments.clear(); tempFilterState.staffIds.clear();
+                updateBranchOptions();
+                updateDepartmentOptions();
+                updateStaffOptions();
+            } else if (type === 'branch') {
+                tempFilterState.departments.clear(); tempFilterState.staffIds.clear();
+                updateDepartmentOptions();
+                updateStaffOptions();
+            } else if (type === 'dept') {
+                 tempFilterState.staffIds.clear();
+                updateStaffOptions();
+            }
+         }
+        
+        // Checks if "Select All" should be checked based on individual items IN THE MODAL
+        function checkSelectAllState(type) {
+            const listElement = document.getElementById(`filter-${type}-list`);
+            if (!listElement) return;
+            const selectAll = listElement.querySelector('.filter-select-all');
+            // Only count items that are NOT disabled
+            const items = listElement.querySelectorAll(`input[data-type="${type}"]:not(.filter-select-all):not(:disabled)`);
+            if (!selectAll) return; 
+
+            if (items.length === 0) {
+                 selectAll.checked = false; // Nothing to select
+                 return;
+            }
+
+            const allChecked = [...items].every(cb => cb.checked);
+            selectAll.checked = allChecked;
+         }
+        
+        // Maps filter type string to the key in tempFilterState/currentFilterState
+        function getSetKeyByType(type) {
+             switch(type) {
+                 case 'company': return 'companies';
+                 case 'branch': return 'branches';
+                 case 'dept': return 'departments';
+                 case 'staff': return 'staffIds';
+                 case 'status': return 'statuses';
+                 default: return null;
+             }
+         }
+
+        // Applies the selections from currentFilterState to filter staffDataCache
+        function applyCurrentFilters() {
+             const { companies, branches, departments, staffIds, statuses } = currentFilterState; // Use the applied filters
+
+             return Object.values(staffDataCache).filter(staff => {
+                 if (!staff || !staff.data) return false;
+
+                 // Company filter
+                const staffCompany = staff.data.company || 'Unassigned';
+                if (companies.size > 0 && !companies.has(staffCompany)) {
+                    return false;
+                }
+                 
+                 // Branch filter
+                const staffBranch = staff.data.branch || 'Unassigned';
+                if (branches.size > 0 && !branches.has(staffBranch)) {
+                    return false;
+                }
+
+                 // Department filter
+                const staffDept = staff.data.dept || 'Unassigned';
+                if (departments.size > 0 && !departments.has(staffDept)) {
+                    return false;
+                }
+
+                 // Staff filter
+                if (staffIds.size > 0 && !staffIds.has(staff.id)) {
+                    return false;
+                }
+
+                 // Status filter
+                if (statuses.size > 0) {
+                     const cardStatus = getCardStatus(staff.data);
+                     let effectiveStatus = cardStatus.raw; // "live", "no-signal", "Offline"
+                     
+                     // If it's just "Offline", use the specific status
+                     if (effectiveStatus === 'Offline' && staff.data.status !== 'Offline') {
+                         effectiveStatus = staff.data.status;
+                     }
+
+                     if (!statuses.has(effectiveStatus)) {
+                         // Check for 'Other' status match if 'Other' is selected
+                        if (statuses.has('Other')) {
+                             const defaultStatuses = ['live', 'no-signal', 'Offline', 'Driving to Client', 'At Job Site', 'On Break', 'End of Day'];
+                             if (defaultStatuses.includes(effectiveStatus)) {
+                                 return false; // It's a default status, but not the one selected
+                             }
+                        } else {
+                             return false; // Not in the selected set
+                        }
+                     }
+                 }
+
+                 return true; // Pass all filters
+             });
+         }
+        
+        // Clears both temp and current filters and updates UI
+        function clearFilters() {
+             // Reset temp state
+             tempFilterState = { companies: new Set(), branches: new Set(), departments: new Set(), staffIds: new Set(), statuses: new Set() };
+             // Reset applied state
+             currentFilterState = { companies: new Set(), branches: new Set(), departments: new Set(), staffIds: new Set(), statuses: new Set() };
+             
+             populateFilterModal(); // Reset checkboxes in the modal (will show all enabled)
+             renderUI(); // Re-render everything with no filters
+             closeFilterModal(); 
+         }
+        
+        // Updates the filter icon based on CURRENT applied filters
+        function updateFilterIconState() {
+             const isActive = currentFilterState.companies.size > 0 ||
+                               currentFilterState.branches.size > 0 ||
+                               currentFilterState.departments.size > 0 ||
+                               currentFilterState.staffIds.size > 0 ||
+                               currentFilterState.statuses.size > 0;
+             if (filterIconBtn) { 
+                 filterIconBtn.classList.toggle('active', isActive);
+             }
+         }
+
+        // --- Event Listeners ---
+        if (staffListEl) {
+            staffListEl.addEventListener('click', (e)=>{ 
+                const btn=e.target.closest('button'), card=e.target.closest('.staff-card-clickable'); 
+                if(btn){ 
+                    e.stopPropagation(); 
+                    const d=btn.dataset; 
+                    if(!d || !d.id || d.id === 'undefined' || d.id === 'null') { 
+                        console.warn("Button clicked without valid data-id: ", d); 
+                        return; 
+                    } 
+                    if(btn.classList.contains('edit-name-btn')) {
+                        openEditModal(d.id, d.name, d.phone, d.company, d.branch, d.dept); 
+                    } else if(btn.classList.contains('edit-status-btn')) {
+                         openEditStatusModal(d.id, d.status || 'Offline'); 
+                    } else if(btn.classList.contains('view-history-btn')) {
+                         openHistoryModal(d.id);
+                    } else if(btn.classList.contains('view-day-report-btn')) {
+                         fetchAndShowDayReport(d.id);
+                    } else if(btn.classList.contains('find-location-btn')) {
+                         fetchLocationName(d.id); 
+                    }
+                } else if(card?.dataset.id) { 
+                    panToStaff(card.dataset.id); 
+                }
+            });
+        }
+        if (geofenceListEl) geofenceListEl.addEventListener('click', (e)=>{ const del=e.target.closest('.delete-geofence-btn'), edit=e.target.closest('.edit-geofence-btn'); if(del?.dataset.id) deleteGeofence(del.dataset.id); else if(edit?.dataset.id) openEditGeofenceModal(edit.dataset.id); });
+        if (openAddStaffModalBtn) openAddStaffModalBtn.addEventListener('click', openAddStaffModal); if (cancelAddStaffBtn) cancelAddStaffBtn.addEventListener('click', closeAddStaffModal); if (addStaffBtn) addStaffBtn.addEventListener('click', addNewStaff);
+        if (cancelEditBtn) cancelEditBtn.addEventListener('click', closeEditModal); if (saveEditBtn) saveEditBtn.addEventListener('click', saveStaffInfo); if (deleteStaffBtn) deleteStaffBtn.addEventListener('click', ()=>{const id=editStaffIdInput?.value, name=editStaffNameInput?.value; if(id&&name) confirmDeleteStaff(id,name);});
+        if (cancelStatusBtn) cancelStatusBtn.addEventListener('click', closeEditStatusModal); if (saveStatusBtn) saveStatusBtn.addEventListener('click', saveStaffStatus); if (editStatusSelect) editStatusSelect.addEventListener('change', ()=>{if(editStatusSelect.value==='Other'&&editStatusOtherInput){editStatusOtherInput.classList.remove('hidden'); editStatusOtherInput.focus();} else if(editStatusOtherInput) editStatusOtherInput.classList.add('hidden');});
+        if (cancelGeofenceBtn) cancelGeofenceBtn.addEventListener('click', closeGeofenceModal); if (saveGeofenceBtn) saveGeofenceBtn.addEventListener('click', saveGeofence); if (assignAllStaffCheckbox) assignAllStaffCheckbox.addEventListener('change', (e)=>{const c=e.target.checked; if(geofenceStaffListEl) geofenceStaffListEl.querySelectorAll('input').forEach(cb=>{cb.checked=c; cb.disabled=c;});}); if (createGeofenceBtn) createGeofenceBtn.addEventListener('click', ()=>{if(drawControl) drawControl.enable();});
+        if (searchInput) { searchInput.addEventListener('input', handleSearch); document.addEventListener('click', (e) => { const container = document.getElementById('search-container'); if (container && !container.contains(e.target) && searchResultsEl) { searchResultsEl.classList.add('hidden'); } }); } 
+        if (searchResultsEl) { searchResultsEl.addEventListener('click', (e) => { const item = e.target.closest('div[data-id]'); if (item?.dataset.id) { panToStaff(item.dataset.id); if(searchInput) searchInput.value=''; searchResultsEl.classList.add('hidden'); } }); } 
+        
+        // Filter Modal Event Listeners
+        if (filterIconBtn) filterIconBtn.addEventListener('click', openFilterModal);
+        if (cancelFilterBtn) cancelFilterBtn.addEventListener('click', closeFilterModal);
+        if (clearFiltersBtn) clearFiltersBtn.addEventListener('click', clearFilters);
+        if (applyFiltersBtn) applyFiltersBtn.addEventListener('click', () => { 
+             // Apply the temp state to the current state
+             currentFilterState = {
+                 companies: new Set(tempFilterState.companies),
+                 branches: new Set(tempFilterState.branches),
+                 departments: new Set(tempFilterState.departments),
+                 staffIds: new Set(tempFilterState.staffIds),
+                 statuses: new Set(tempFilterState.statuses)
+             };
+            renderUI(); // Re-render with applied filters
+            closeFilterModal(); 
+        });
+        
+        // Add single listener to the modal for checkbox changes
+        if (filterModal) {
+             filterModal.addEventListener('input', handleFilterChange); 
+        }
+        
+        // History Modal Listeners
+        if (cancelHistoryBtn) cancelHistoryBtn.addEventListener('click', closeHistoryModal);
+        if (showHistoryBtn) showHistoryBtn.addEventListener('click', () => {
+            const id = historyStaffIdInput.value;
+            const dateStr = historyDatePicker.value;
+            if (id && dateStr) {
+                // Parse date as local, not UTC
+                const parts = dateStr.split('-');
+                const date = new Date(parts[0], parts[1] - 1, parts[2]);
+                fetchAndShowHistory(id, date);
+                closeHistoryModal();
+            } else {
+                showMessage("Error", "Please select a staff and a date.");
+            }
+        });
+
+        // Day Report Modal Listener
+        if (closeReportBtn) closeReportBtn.addEventListener('click', closeDayReportModal);
+
+        // Setup "Other" listeners
+        setupSelectOtherListeners();
+        
+        // --- Init ---
+        document.addEventListener('DOMContentLoaded', ()=>{ initializeMap(); initialize(); });
+        
+        // --- Cloud Func Reminder ---
+        /* NOTE FOR AUTO DELETE: Use a scheduled Firebase Cloud Function to delete history older than 45 days. Cannot be done client-side. */
+    </script>
+</body>
+</html>
+
