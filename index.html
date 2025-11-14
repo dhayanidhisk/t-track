@@ -1,0 +1,3313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin - Staff Tracker Dashboard</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet Map CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <!-- Leaflet Map JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <!-- Leaflet.draw Plugin for Geofencing -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+
+    <!-- OSM Buildings (3D buildings overlay) -->
+    <script src="https://cdn.osmbuildings.org/OSMBuildings-Latest.js"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden; /* Prevent scrolling on the body */
+        }
+        #map { /* Apply height only to the main map */
+            height: 100%;
+        }
+        #map-container { /* Main map container */
+            height: 100vh;
+            position: relative; /* Needed for absolute positioning */
+        }
+        
+        /* Custom scrollbar for sidebar/modal sections */
+        .custom-scroll::-webkit-scrollbar {
+            width: 6px;
+        }
+        .custom-scroll::-webkit-scrollbar-track {
+            background: #1f2937; /* gray-800 */
+        }
+        .custom-scroll::-webkit-scrollbar-thumb {
+            background: #4b5563; /* gray-600 */
+            border-radius: 3px;
+        }
+        .custom-scroll::-webkit-scrollbar-thumb:hover {
+            background: #6b7280; /* gray-500 */
+        }
+        
+        /* Leaflet marker customization */
+        .staff-marker-label {
+            background-color: rgba(255, 255, 255, 0.95);
+            border: 1px solid #94a3b8; /* gray-400 */
+            color: #1e293b; /* gray-800 */
+            font-weight: 700;
+            font-size: 12px;
+            white-space: nowrap;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.25);
+            pointer-events: none; /* labels don’t block clicks on markers */
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+        /* Class for clickable staff card */
+        .staff-card-clickable {
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out;
+        }
+        .staff-card-clickable:hover {
+            background-color: #374151; /* gray-700 */
+        }
+        /* Geofence Alert Flash - This is the "problem" state (OUTSIDE) */
+        @keyframes pulse-red {
+            0%, 100% {
+                background-color: #7f1d1d; /* red-900 */
+                border-color: #ef4444; /* red-500 */
+            }
+            50% {
+                background-color: #1f2937; /* gray-800 */
+                border-color: #4b5563; /* gray-600 */
+            }
+        }
+        .geofence-alert {
+            animation: pulse-red 1.5s infinite;
+        }
+
+        /* Sidebar Card Highlight */
+        @keyframes highlight-blue {
+            0%, 100% { background-color: #1f2937; } /* gray-800 */
+            50% { background-color: #1d4ed8; } /* blue-700 */
+        }
+        .card-highlight {
+            animation: highlight-blue 1.5s ease-in-out;
+        }
+
+        /* Hide Leaflet.draw toolbar */
+        .leaflet-draw-toolbar {
+            display: none;
+        }
+        /* Geofence Assignment List */
+        .geofence-staff-list {
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid #4b5563; /* gray-600 */
+            border-radius: 0.375rem; /* rounded-md */
+            padding: 0.5rem; /* p-2 */
+            background-color: #374151; /* gray-700 */
+        }
+        /* Location text style */
+        .location-text {
+            font-size: 0.8rem; /* text-xs */
+            color: #d1d5db; /* gray-300 */
+            font-style: italic;
+        }
+        .location-text button {
+            color: #93c5fd; /* blue-300 */
+            text-decoration: underline;
+            font-style: normal;
+        }
+        .location-text button:hover {
+            color: #bfdbfe; /* blue-200 */
+        }
+        
+        /* Style for date/select inputs */
+        input[type="date"]::-webkit-calendar-picker-indicator,
+        select {
+             filter: invert(0.8); /* Make icons visible on dark background */
+        }
+        select {
+             background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+             background-position: right 0.5rem center;
+             background-repeat: no-repeat;
+             background-size: 1.5em 1.5em;
+             padding-right: 2.5rem;
+             -webkit-appearance: none;
+             -moz-appearance: none;
+             appearance: none;
+        }
+        
+        /* Search Bar Styles */
+        #search-container {
+            position: absolute;
+            top: 1rem; 
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 1000; 
+            width: 90%;
+            max-width: 400px;
+        }
+        #search-input {
+            width: 100%; padding: 0.75rem 1rem; border: 1px solid #4b5563; border-radius: 0.375rem; background-color: #1f2937; color: white; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+        }
+        #search-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.5); }
+        #search-results {
+            position: absolute; top: calc(100% + 0.25rem); left: 0; right: 0; background-color: #1f2937; border: 1px solid #4b5563; border-radius: 0.375rem; max-height: 200px; overflow-y: auto; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); z-index: 999;
+        }
+        #search-results div { padding: 0.5rem 1rem; cursor: pointer; border-bottom: 1px solid #374151; }
+        #search-results div:last-child { border-bottom: none; }
+        #search-results div:hover { background-color: #374151; }
+        #search-results .staff-details { font-size: 0.75rem; color: #9ca3af; }
+        
+        /* Filter Icon Button */
+        #filter-icon-btn {
+            position: absolute;
+            top: 1rem; /* 16px */
+            right: 1rem; /* 16px */
+            z-index: 1000;
+            padding: 0.5rem; /* p-2 */
+            background-color: #1f2937; /* gray-800 */
+            border: 1px solid #4b5563; /* gray-600 */
+            border-radius: 0.375rem; /* rounded-md */
+            color: #d1d5db; /* gray-300 */
+            cursor: pointer;
+            transition: background-color 0.2s, color 0.2s;
+        }
+        #filter-icon-btn:hover {
+            background-color: #374151; /* gray-700 */
+            color: white;
+        }
+        #filter-icon-btn.active { /* Style when filters are applied */
+            background-color: #1d4ed8; /* blue-700 */
+            color: white;
+            border-color: #1d4ed8;
+        }
+         #filter-icon-btn svg {
+             width: 1.25rem; /* w-5 */
+             height: 1.25rem; /* h-5 */
+         }
+
+        /* Clear History Path Button */
+        #clear-path-btn {
+            position: absolute;
+            top: 1rem; /* 16px */
+            right: 5.5rem; /* slightly left of filter button */
+            z-index: 1000;
+            padding: 0.5rem 0.75rem; /* px-3 py-2 */
+            background-color: #1f2937; /* gray-800 */
+            border: 1px solid #4b5563; /* gray-600 */
+            border-radius: 0.375rem; /* rounded-md */
+            color: #d1d5db; /* gray-300 */
+            cursor: pointer;
+            transition: background-color 0.2s, color 0.2s;
+        }
+        #clear-path-btn:hover {
+            background-color: #374151; /* gray-700 */
+            color: white;
+        }
+
+        /* Filter Modal Styles */
+        #filter-modal .filter-section {
+            margin-bottom: 1rem; /* mb-4 */
+            padding-bottom: 1rem; /* pb-4 */
+            border-bottom: 1px solid #4b5563; /* border-b border-gray-600 */
+        }
+        #filter-modal .filter-section:last-child {
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+        }
+        #filter-modal h3 {
+            font-size: 1rem; /* text-base */
+            font-weight: 600; /* font-semibold */
+            margin-bottom: 0.5rem; /* mb-2 */
+            color: #e5e7eb; /* gray-200 */
+        }
+        #filter-modal .checkbox-list {
+            max-height: 150px; /* Adjust as needed */
+            overflow-y: auto;
+            padding: 0.5rem; /* p-2 */
+            border: 1px solid #4b5563; /* border border-gray-600 */
+            border-radius: 0.375rem; /* rounded-md */
+            background-color: #374151; /* bg-gray-700 */
+            space-y: 0.25rem; /* space-y-1 */
+        }
+         #filter-modal label {
+             display: flex;
+             align-items: center;
+             cursor: pointer;
+             color: #d1d5db; /* gray-300 */
+             font-size: 0.875rem; /* text-sm */
+             user-select: none; /* Prevent text selection on click */
+         }
+         #filter-modal input[type="checkbox"] {
+             margin-right: 0.5rem; /* mr-2 */
+             height: 1rem; /* h-4 */
+             width: 1rem; /* w-4 */
+             border-radius: 0.25rem; /* rounded */
+             border-color: #6b7280; /* border-gray-500 */
+             background-color: #4b5563; /* bg-gray-600 */
+             color: #6366f1; /* text-indigo-600 */
+             focus:ring-indigo-500;
+         }
+         #filter-modal label.disabled {
+             color: #6b7280; /* gray-500 */
+             cursor: not-allowed;
+             opacity: 0.6;
+         }
+         #filter-modal input[type="checkbox"]:disabled {
+             opacity: 0.5;
+         }
+
+         /* Day Report Modal List */
+         #day-report-list {
+             max-height: 300px;
+             overflow-y: auto;
+             border: 1px solid #4b5563;
+             border-radius: 0.375rem;
+             padding: 0.5rem;
+             background-color: #1f2937; /* gray-800 */
+         }
+         #day-report-list p {
+             padding: 0.25rem 0.5rem;
+             border-bottom: 1px solid #374151; /* gray-700 */
+         }
+         #day-report-list p:last-child {
+             border-bottom: none;
+         }
+        
+    </style>
+</head>
+<body class="bg-gray-800 text-white">
+
+    <!-- Login Page (Hidden after authentication) -->
+    <div id="login-page" class="fixed inset-0 bg-gray-900 flex items-center justify-center z-[10000]">
+        <div class="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-md border border-gray-700">
+            <h1 class="text-3xl font-bold text-center text-white mb-8">Staff Tracker</h1>
+            
+            <div class="space-y-4">
+                <div>
+                    <label for="login-email" class="block text-sm font-medium text-gray-300">Email</label>
+                    <input type="email" id="login-email" placeholder="admin@example.com" 
+                        class="mt-1 block w-full px-4 py-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                
+                <div>
+                    <label for="login-password" class="block text-sm font-medium text-gray-300">Password</label>
+                    <div class="relative">
+                        <input type="password" id="login-password" placeholder="••••••••" 
+                            class="mt-1 block w-full px-4 py-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                        <button type="button" id="toggle-password" class="absolute right-3 top-3 text-gray-400 hover:text-gray-200">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="login-error" class="hidden text-red-400 text-sm p-3 bg-red-900 rounded"></div>
+                
+                <button id="login-btn" class="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 font-medium transition">
+                    Sign In
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="flex relative h-screen">
+
+        <!-- Sidebar -->
+        <div class="w-96 h-full bg-gray-900 shadow-lg flex flex-col z-20">
+            <!-- Header -->
+            <div class="p-4 border-b border-gray-700 flex-shrink-0">
+                <div class="flex justify-between items-center mb-2">
+                    <h1 class="text-2xl font-bold text-white">Staff Tracker</h1>
+                    <button id="logout-btn" class="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 transition">
+                        Logout
+                    </button>
+                </div>
+                <div id="connection-status" class="mt-2 text-sm font-medium text-center text-red-400">
+                    Connecting to database...
+                </div>
+                <div id="admin-info" class="mt-1 text-xs text-center text-gray-400 hidden">
+                    <!-- Admin name will appear here -->
+                </div>
+            </div>
+            
+            <!-- Add Staff Button -->
+            <div id="add-staff-section" class="p-4 border-b border-gray-700 flex-shrink-0 hidden">
+                <button id="open-add-staff-modal-btn" class="w-full px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 font-medium">
+                    + Add New Staff
+                </button>
+            </div>
+            
+            <!-- Admin Controls (visible only to Super Admin) -->
+            <div id="admin-controls" class="p-4 border-b border-gray-700 flex-shrink-0 hidden">
+                <button id="open-add-admin-modal-btn" class="w-full px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700 font-medium mb-2">
+                    + Add New Admin
+                </button>
+                <button id="open-manage-admins-btn" class="w-full px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 font-medium mb-2">
+                    👥 Manage Admins
+                </button>
+                <p class="mt-2 text-xs text-gray-400">Super Admin controls</p>
+            </div>
+
+            <!-- Geofence Section -->
+            <div class="p-4 border-b border-gray-700 flex-shrink-0">
+                <h2 class="text-lg font-semibold mb-2">Geofences</h2>
+                <button id="create-geofence-btn" class="w-full px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 font-medium mb-3">
+                    Create New Geofence (Circle)
+                </button>
+                <div id="geofence-list" class="custom-scroll max-h-32 overflow-y-auto space-y-2">
+                    <p id="loading-geofences" class="text-gray-400">Loading geofences...</p>
+                    <!-- Geofences will be listed here -->
+                </div>
+            </div>
+            
+            <!-- Staff List -->
+            <div id="staff-list" class="custom-scroll flex-grow overflow-y-auto p-4 space-y-3">
+                <!-- Staff cards will be injected here by JavaScript -->
+                <p id="loading-staff" class="text-gray-400">Loading staff list...</p>
+            </div>
+        </div>
+
+        <!-- Map Area -->
+        <div id="map-container" class="flex-grow h-full">
+            <!-- This div is the map container -->
+            <div id="map" class="w-full h-full"></div>
+
+            <!-- Search Bar Container -->
+            <div id="search-container">
+                <input type="text" id="search-input" placeholder="Search by Name, Phone, Company, Branch...">
+                <div id="search-results" class="hidden">
+                    <!-- Search results will appear here -->
+                </div>
+            </div>
+
+            <!-- Filter Icon Button -->
+            <button id="filter-icon-btn" title="Filter Staff View">
+                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                     <path stroke-linecap="round" stroke-linejoin="round" d="M12 3c2.755 0 5.455.232 8.083.678.533.09.917.556.917 1.096v1.044a2.25 2.25 0 01-.659 1.591l-5.432 5.432a2.25 2.25 0 00-.659 1.591v2.927a2.25 2.25 0 01-1.244 2.013L9.75 21v-6.572a2.25 2.25 0 00-.659-1.591L3.659 7.409A2.25 2.25 0 013 5.818V4.774c0-.54.384-1.006.917-1.096A48.32 48.32 0 0112 3z" />
+                 </svg>
+            </button>
+
+            <!-- Clear History Path Button -->
+            <button id="clear-path-btn" title="Hide History Path" class="hidden">✕ Path</button>
+        </div>
+    </div>
+
+    <!-- Add Staff Modal (Updated) -->
+    <div id="add-staff-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999] hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg border border-gray-700">
+            <h2 class="text-xl font-bold text-white mb-4">Add New Staff</h2>
+            <div class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="new-staff-name" class="block text-sm font-medium text-gray-300">Name</label>
+                        <input type="text" id="new-staff-name" placeholder="Staff's full name" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                    </div>
+                    <div>
+                        <label for="new-staff-phone" class="block text-sm font-medium text-gray-300">Phone Number (10 Digits)</label>
+                        <input type="tel" id="new-staff-phone" placeholder="e.g., 9876543210" maxlength="10" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                    </div>
+                </div>
+                
+                <div>
+                    <label for="new-staff-company" class="block text-sm font-medium text-gray-300">Company</label>
+                    <select id="new-staff-company" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                        <option value="">Select Company</option>
+                        <option value="Toyota">Toyota</option>
+                        <option value="Ather">Ather</option>
+                        <option value="AMS">AMS</option>
+                        <option value="Other">Other (Specify)</option>
+                    </select>
+                    <input type="text" id="new-staff-company-other" placeholder="Enter company name" class="mt-2 hidden w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white">
+                </div>
+                
+                <div>
+                    <label for="new-staff-branch" class="block text-sm font-medium text-gray-300">Branch</label>
+                    <select id="new-staff-branch" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                        <option value="">Select Branch</option>
+                        <option value="Coimbatore">Coimbatore</option>
+                        <option value="Erode">Erode</option>
+                        <option value="Tiruppur">Tiruppur</option>
+                        <option value="Mettupalayam">Mettupalayam</option>
+                        <option value="Udumalpet">Udumalpet</option>
+                        <option value="Dharapuram">Dharapuram</option>
+                        <option value="Madampatti">Madampatti</option>
+                        <option value="Pollachi">Pollachi</option>
+                        <option value="Ooty">Ooty</option>
+                        <option value="Kangayam">Kangayam</option>
+                        <option value="Bhavani">Bhavani</option>
+                        <option value="Other">Other (Specify)</option>
+                    </select>
+                    <input type="text" id="new-staff-branch-other" placeholder="Enter branch name" class="mt-2 hidden w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white">
+                </div>
+                
+                <div>
+                    <label for="new-staff-dept" class="block text-sm font-medium text-gray-300">Department</label>
+                    <select id="new-staff-dept" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                        <option value="">Select Department</option>
+                        <option value="Marketing">Marketing</option>
+                        <option value="Insurance">Insurance</option>
+                        <option value="Eco Wash">Eco Wash</option>
+                        <option value="Towing Service">Towing Service</option>
+                        <option value="Driver Service">Driver Service</option>
+                        <option value="BrakeDown Service">BrakeDown Service</option>
+                        <option value="Other">Other (Specify)</option>
+                    </select>
+                    <input type="text" id="new-staff-dept-other" placeholder="Enter department name" class="mt-2 hidden w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white">
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end space-x-3">
+                <button id="cancel-add-staff-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Cancel</button>
+                <button id="add-staff-btn" class="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700">Add Staff</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Admin Modal -->
+    <div id="add-admin-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999] hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg border border-gray-700 max-h-[90vh] overflow-y-auto">
+            <h2 class="text-xl font-bold text-white mb-4">Add New Admin</h2>
+            <div class="space-y-4">
+                <!-- Name -->
+                <div>
+                    <label for="new-admin-name" class="block text-sm font-medium text-gray-300">Name</label>
+                    <input type="text" id="new-admin-name" placeholder="Admin's full name" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:outline-none focus:ring-blue-500">
+                </div>
+                
+                <!-- Email -->
+                <div>
+                    <label for="new-admin-email" class="block text-sm font-medium text-gray-300">Email</label>
+                    <input type="email" id="new-admin-email" placeholder="admin@example.com" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:outline-none focus:ring-blue-500">
+                </div>
+                
+                <!-- Password -->
+                <div>
+                    <label for="new-admin-password" class="block text-sm font-medium text-gray-300">Password</label>
+                    <input type="password" id="new-admin-password" placeholder="Minimum 6 characters" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:outline-none focus:ring-blue-500">
+                    <p class="text-xs text-gray-400 mt-1">Creates metadata; user must be set up in Firebase Auth separately.</p>
+                </div>
+                
+                <!-- Role -->
+                <div>
+                    <label for="new-admin-role" class="block text-sm font-medium text-gray-300">Role</label>
+                    <select id="new-admin-role" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:outline-none focus:ring-blue-500">
+                        <option value="master">Super Admin (Full Access)</option>
+                        <option value="admin">Admin (Department Restricted)</option>
+                    </select>
+                </div>
+                
+                <!-- Departments (shown only for admin role) -->
+                <div id="departments-section" class="hidden">
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Assign Departments</label>
+                    <div id="departments-checkboxes" class="space-y-2 max-h-40 overflow-y-auto p-2 bg-gray-700 rounded">
+                        <!-- Checkboxes will be populated by JS -->
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1">Select one or more departments for this admin.</p>
+                </div>
+                
+                <!-- Permissions -->
+                <div>
+                    <h3 class="text-sm font-medium text-gray-300 mb-2">Permissions</h3>
+                    <div class="grid grid-cols-2 gap-2 text-gray-200">
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="perm-add-staff" class="h-4 w-4 text-purple-600 rounded bg-gray-700"><span>Can Add Staff</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="perm-delete-staff" class="h-4 w-4 text-purple-600 rounded bg-gray-700"><span>Can Delete Staff</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="perm-edit-staff" class="h-4 w-4 text-purple-600 rounded bg-gray-700"><span>Can Edit Staff</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="perm-manage-geofence" class="h-4 w-4 text-purple-600 rounded bg-gray-700"><span>Can Manage Geofences</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="perm-manage-admins" class="h-4 w-4 text-purple-600 rounded bg-gray-700"><span>Can Manage Admins</span></label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mt-6 flex justify-end space-x-3">
+                <button id="cancel-add-admin-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Cancel</button>
+                <button id="add-admin-btn" class="px-4 py-2 bg-amber-600 text-white rounded-md hover:bg-amber-700">Add Admin</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Manage Admins Modal -->
+    <div id="manage-admins-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999] hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-2xl border border-gray-700 max-h-[90vh] overflow-y-auto">
+            <h2 class="text-xl font-bold text-white mb-4">Manage Admins</h2>
+            
+            <!-- Admin Search Bar -->
+            <div class="mb-4">
+                <input type="text" id="admin-search-input" placeholder="Search by name, email, or role..." class="w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+            </div>
+            
+            <!-- Admin Filter Options -->
+            <div class="mb-4 flex flex-wrap gap-2">
+                <button id="filter-all-admins" class="admin-filter-btn px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700" data-filter="all">All</button>
+                <button id="filter-master-admins" class="admin-filter-btn px-3 py-1 bg-gray-600 text-white text-sm rounded hover:bg-gray-500" data-filter="master">Super Admins</button>
+                <button id="filter-regular-admins" class="admin-filter-btn px-3 py-1 bg-gray-600 text-white text-sm rounded hover:bg-gray-500" data-filter="admin">Regular Admins</button>
+            </div>
+            
+            <div id="admins-list" class="space-y-3 max-h-96 overflow-y-auto custom-scroll">
+                <p class="text-gray-400">Loading admins...</p>
+            </div>
+            
+            <div class="mt-6 flex justify-end">
+                <button id="close-manage-admins-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Admin Modal -->
+    <div id="edit-admin-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999] hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg border border-gray-700 max-h-[90vh] overflow-y-auto">
+            <h2 class="text-xl font-bold text-white mb-4">Edit Admin</h2>
+            <input type="hidden" id="edit-admin-id">
+            
+            <div class="space-y-4">
+                <div>
+                    <label for="edit-admin-name" class="block text-sm font-medium text-gray-300">Name</label>
+                    <input type="text" id="edit-admin-name" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white">
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-300">Email (Username)</label>
+                    <input type="email" id="edit-admin-email" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white">
+                    <p class="text-xs text-yellow-400 mt-1">⚠️ Changing email will affect login credentials</p>
+                </div>
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-300">Role</label>
+                    <input type="text" id="edit-admin-role" disabled class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-600 text-gray-400" title="Role cannot be changed">
+                </div>
+                
+                <!-- Password Reset Section -->
+                <div class="border-t border-gray-600 pt-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <label class="block text-sm font-medium text-gray-300">Reset Password</label>
+                        <button type="button" id="toggle-password-reset" class="text-xs text-blue-400 hover:text-blue-300">Change Password</button>
+                    </div>
+                    <div id="password-reset-section" class="hidden space-y-3">
+                        <div>
+                            <label for="edit-admin-new-password" class="block text-xs text-gray-400">New Password</label>
+                            <input type="password" id="edit-admin-new-password" placeholder="Minimum 6 characters" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white text-sm">
+                        </div>
+                        <div>
+                            <label for="edit-admin-confirm-password" class="block text-xs text-gray-400">Confirm Password</label>
+                            <input type="password" id="edit-admin-confirm-password" placeholder="Re-enter password" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white text-sm">
+                        </div>
+                        <p class="text-xs text-gray-400">💡 Leave blank to keep current password</p>
+                    </div>
+                </div>
+                
+                <div id="edit-departments-section">
+                    <label class="block text-sm font-medium text-gray-300 mb-2">Departments</label>
+                    <div id="edit-departments-checkboxes" class="space-y-2 max-h-40 overflow-y-auto p-2 bg-gray-700 rounded"></div>
+                </div>
+                
+                <div>
+                    <h3 class="text-sm font-medium text-gray-300 mb-2">Permissions</h3>
+                    <div class="grid grid-cols-2 gap-2 text-gray-200">
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="edit-perm-add-staff" class="h-4 w-4"><span>Can Add Staff</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="edit-perm-delete-staff" class="h-4 w-4"><span>Can Delete Staff</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="edit-perm-edit-staff" class="h-4 w-4"><span>Can Edit Staff</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="edit-perm-manage-geofence" class="h-4 w-4"><span>Can Manage Geofences</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="edit-perm-manage-admins" class="h-4 w-4"><span>Can Manage Admins</span></label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mt-6 flex justify-between">
+                <button id="delete-admin-btn" class="px-4 py-2 bg-red-700 text-white rounded-md hover:bg-red-800">Delete Admin</button>
+                <div class="space-x-3">
+                    <button id="cancel-edit-admin-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Cancel</button>
+                    <button id="save-edit-admin-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Staff Info Modal (Updated) -->
+    <div id="edit-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999] hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg border border-gray-700">
+            <h2 class="text-xl font-bold text-white mb-4">Edit Staff Info</h2>
+            <input type="hidden" id="edit-staff-id">
+            <div class="space-y-4">
+                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="edit-staff-name" class="block text-sm font-medium text-gray-300">Name</label>
+                        <input type="text" id="edit-staff-name" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                    </div>
+                    <div>
+                        <label for="edit-staff-phone" class="block text-sm font-medium text-gray-300">Phone Number (10 Digits)</label>
+                        <input type="tel" id="edit-staff-phone" placeholder="e.g., 9876543210" maxlength="10" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                    </div>
+                </div>
+                
+                <div>
+                    <label for="edit-staff-company" class="block text-sm font-medium text-gray-300">Company</label>
+                    <select id="edit-staff-company" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                        <option value="">Select Company</option>
+                        <option value="Toyota">Toyota</option>
+                        <option value="Ather">Ather</option>
+                        <option value="AMS">AMS</option>
+                        <option value="Other">Other (Specify)</option>
+                    </select>
+                    <input type="text" id="edit-staff-company-other" placeholder="Enter company name" class="mt-2 hidden w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white">
+                </div>
+                
+                <div>
+                    <label for="edit-staff-branch" class="block text-sm font-medium text-gray-300">Branch</label>
+                    <select id="edit-staff-branch" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                        <option value="">Select Branch</option>
+                        <option value="Coimbatore">Coimbatore</option>
+                        <option value="Erode">Erode</option>
+                        <option value="Tiruppur">Tiruppur</option>
+                        <option value="Mettupalayam">Mettupalayam</option>
+                        <option value="Udumalpet">Udumalpet</option>
+                        <option value="Dharapuram">Dharapuram</option>
+                        <option value="Madampatti">Madampatti</option>
+                        <option value="Pollachi">Pollachi</option>
+                        <option value="Ooty">Ooty</option>
+                        <option value="Kangayam">Kangayam</option>
+                        <option value="Bhavani">Bhavani</option>
+                        <option value="Other">Other (Specify)</option>
+                    </select>
+                    <input type="text" id="edit-staff-branch-other" placeholder="Enter branch name" class="mt-2 hidden w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white">
+                </div>
+                
+                <div>
+                    <label for="edit-staff-dept" class="block text-sm font-medium text-gray-300">Department</label>
+                    <select id="edit-staff-dept" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+                        <option value="">Select Department</option>
+                        <option value="Marketing">Marketing</option>
+                        <option value="Insurance">Insurance</option>
+                        <option value="Eco Wash">Eco Wash</option>
+                        <option value="Towing Service">Towing Service</option>
+                        <option value="Driver Service">Driver Service</option>
+                        <option value="BrakeDown Service">BrakeDown Service</option>
+                        <option value="Other">Other (Specify)</option>
+                    </select>
+                    <input type="text" id="edit-staff-dept-other" placeholder="Enter department name" class="mt-2 hidden w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white">
+                </div>
+            </div>
+            <!-- Modal Buttons -->
+            <div class="mt-6 flex justify-between">
+                <button id="delete-staff-btn" class="px-4 py-2 bg-red-700 text-white rounded-md hover:bg-red-800">Delete Staff</button>
+                <div class="space-x-3">
+                    <button id="cancel-edit-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Cancel</button>
+                    <button id="save-edit-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+
+    <!-- Save/Edit Geofence Modal -->
+    <div id="geofence-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999] hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg border border-gray-700">
+            <!-- Modal Title -->
+            <h2 id="geofence-modal-title" class="text-xl font-bold text-white mb-4">Create Geofence</h2>
+            <!-- Hidden input to store ID for editing -->
+            <input type="hidden" id="edit-geofence-id">
+            
+            <!-- Geofence Name -->
+            <div class="mb-4">
+                <label for="geofence-name" class="block text-sm font-medium text-gray-300">Geofence Name:</label>
+                <input type="text" id="geofence-name" placeholder="e.g., 'Main Worksite'" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+            </div>
+            
+            <!-- Geofence Staff Assignment -->
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-300 mb-2">Assign to Staff:</label>
+                <div class="flex items-center mb-2">
+                    <input type="checkbox" id="assign-all-staff" class="h-4 w-4 text-purple-600 border-gray-500 rounded focus:ring-purple-500 bg-gray-700">
+                    <label for="assign-all-staff" class="ml-2 block text-sm text-gray-200">Assign to All Staff (includes new staff)</label>
+                </div>
+                <!-- Search within staff list -->
+                <div class="mb-2">
+                    <input type="text" id="geofence-staff-search" placeholder="Search staff by name, company, branch, dept..." class="w-full px-3 py-2 border border-gray-600 rounded-md bg-gray-700 text-white">
+                </div>
+                <div id="geofence-staff-list" class="geofence-staff-list space-y-1">
+                    <!-- Staff checkboxes will be injected here -->
+                    <p class="text-gray-400">Loading staff...</p>
+                </div>
+            </div>
+
+            <div class="mt-6 flex justify-end space-x-3">
+                <button id="cancel-geofence-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Cancel</button>
+                <button id="save-geofence-btn" class="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Modal (for confirmations and alerts) -->
+    <div id="message-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999] hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-sm border border-gray-700">
+            <h2 id="message-title" class="text-xl font-bold text-white mb-4">Notification</h2>
+            <p id="message-text" class="text-gray-300 mb-6">This is a message.</p>
+            <div id="message-buttons" class="flex justify-end space-x-3">
+                <button id="message-cancel-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500 hidden">Cancel</button>
+                <button id="message-ok-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">OK</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Filter Modal -->
+     <div id="filter-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9998] hidden">
+         <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-xl border border-gray-700 max-h-[90vh] flex flex-col">
+             <h2 class="text-xl font-bold text-white mb-4 flex-shrink-0">Filter Staff View</h2>
+
+            <!-- Filter Content (Scrollable) -->
+             <div class="flex-grow overflow-y-auto pr-2 custom-scroll space-y-4">
+                 <!-- Company Filter -->
+                 <div class="filter-section">
+                     <h3>Select Companies</h3>
+                     <div id="filter-company-list" class="checkbox-list custom-scroll">
+                         <label><input type="checkbox" class="filter-select-all" data-type="company"> Select All</label>
+                         <!-- Company options populated by JS -->
+                     </div>
+                 </div>
+                 <!-- Branch Filter -->
+                 <div class="filter-section">
+                     <h3>Select Branches</h3>
+                     <div id="filter-branch-list" class="checkbox-list custom-scroll">
+                         <label><input type="checkbox" class="filter-select-all" data-type="branch"> Select All</label>
+                         <!-- Branch options populated by JS -->
+                     </div>
+                 </div>
+                 <!-- Department Filter -->
+                 <div class="filter-section">
+                     <h3>Select Departments</h3>
+                     <div id="filter-dept-list" class="checkbox-list custom-scroll">
+                          <label><input type="checkbox" class="filter-select-all" data-type="dept"> Select All</label>
+                         <!-- Dept options populated by JS -->
+                     </div>
+                 </div>
+                 <!-- Staff Filter -->
+                 <div class="filter-section">
+                     <h3>Select Staff</h3>
+                     <div id="filter-staff-list" class="checkbox-list custom-scroll">
+                          <label><input type="checkbox" class="filter-select-all" data-type="staff"> Select All</label>
+                         <!-- Staff options populated by JS -->
+                     </div>
+                 </div>
+                 <!-- Status Filter -->
+                 <div class="filter-section">
+                     <h3>Select Status</h3>
+                     <div id="filter-status-list" class="checkbox-list custom-scroll">
+                          <label><input type="checkbox" class="filter-select-all" data-type="status"> Select All</label>
+                         <!-- Status options populated by JS -->
+                     </div>
+                 </div>
+             </div>
+
+             <!-- Modal Buttons -->
+             <div class="mt-6 flex justify-between items-center flex-shrink-0">
+                  <button id="clear-filters-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Clear Filters</button>
+                 <div class="space-x-3">
+                     <button id="cancel-filter-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Cancel</button>
+                     <button id="apply-filters-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Apply Filters</button>
+                 </div>
+             </div>
+         </div>
+     </div>
+
+    <!-- History Modal -->
+    <div id="history-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999] hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-sm border border-gray-700">
+            <h2 class="text-xl font-bold text-white mb-2">View History</h2>
+            <p class="text-gray-300 mb-4 text-sm">For: <span id="history-staff-name" class="font-bold"></span></p>
+            <input type="hidden" id="history-staff-id">
+            
+            <div class="mb-4">
+                <label for="history-date-picker" class="block text-sm font-medium text-gray-300">Select Date:</label>
+                <input type="date" id="history-date-picker" class="mt-1 block w-full px-3 py-2 border border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 bg-gray-700 text-white">
+            </div>
+
+            <div class="mt-6 flex justify-end space-x-3">
+                <button id="cancel-history-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Cancel</button>
+                <button id="show-history-btn" class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700">Show Path</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- NEW: Day Report Modal -->
+    <div id="day-report-modal" class="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-[9999] hidden">
+        <div class="bg-gray-800 p-6 rounded-lg shadow-xl w-full max-w-lg border border-gray-700 flex flex-col max-h-[90vh]">
+            <h2 class="text-xl font-bold text-white mb-2">Daily Report</h2>
+            <p class="text-gray-300 mb-1 text-sm">For: <span id="report-staff-name" class="font-bold"></span></p>
+            <p class="text-gray-300 mb-4 text-sm">Date: <span id="report-date" class="font-bold"></span></p>
+            <input type="hidden" id="report-staff-id">
+            
+            <div id="day-report-list" class="custom-scroll flex-grow mb-4">
+                <!-- Report items will be injected here -->
+                <p class="text-gray-400">Loading report...</p>
+            </div>
+
+            <div class="flex justify-end flex-shrink-0">
+                <button id="close-report-btn" class="px-4 py-2 bg-gray-600 text-gray-100 rounded-md hover:bg-gray-500">Close</button>
+            </div>
+        </div>
+    </div>
+    
+
+
+    <!-- Firebase SDK -->
+    <script type="module">
+        // Import Firebase modules
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInWithEmailAndPassword,
+            onAuthStateChanged,
+            signInAnonymously
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            collection, 
+            onSnapshot, 
+            query, 
+            where, 
+            getDocs,
+            getDoc,
+            setDoc,
+            addDoc,
+            updateDoc,
+            deleteDoc,
+            Timestamp,
+            writeBatch,
+            setLogLevel,
+            arrayUnion
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getAnalytics, isSupported } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-analytics.js";
+
+        // --- App State ---
+        let db, auth;
+        let map; // Main map
+        let staffMarkers = {}; // Stores { staffId: L.Marker }
+        let currentHistoryPath = null; // Stores L.FeatureGroup (line + points)
+        let staffDataCache = {}; // Stores { staffId: { id, data, geofenceState: {} } }
+        let activeTimeIntervals = {}; // Stores { staffId: intervalId }
+        let todayActiveStatsCache = {}; // Stores { staffId: { date: 'YYYY-MM-DD', text: string, activeMs: number } }
+        let blueIcon, greyIcon;
+        const HEARTBEAT_THRESHOLD_MS = 12 * 60 * 1000; // 12 minutes (aligned with 5–10 min device cadence)
+        const GAP_THRESHOLD_MINS = 30; // 30 minutes (history gap threshold)
+        const HISTORY_BUCKET_MINUTES = 15; // Show at most one point per 15 minutes in report and history path
+        // UI caches/state
+        let locationCache = {}; // { staffId: resolvedAddress }
+        let lastPanLatLng = null; // last focused map location
+        let tempRouteLine = null; // temporary line between last and next focus
+        
+        // Geofence State
+        let geofencesCache = {}; // Stores { id: { name, center, radius, layer, assignedStaff: [] } }
+        let drawnItems; // Layer group for drawn geofences
+        let drawControl; // Leaflet.draw controller
+        let tempGeofenceData; // Holds new fence data before saving
+        
+        // Filter State - Holds the currently APPLIED filters
+        let currentFilterState = {
+            companies: new Set(),
+            branches: new Set(),
+            departments: new Set(),
+            staffIds: new Set(),
+            statuses: new Set(),
+        };
+        // Temporary state for the modal while selections are being made
+        let tempFilterState = { 
+            companies: new Set(), 
+            branches: new Set(), 
+            departments: new Set(), 
+            staffIds: new Set(),
+            statuses: new Set(),
+        };
+        let isFilterModalOpen = false; 
+        
+        // Master lists (dynamic, persisted in Firestore)
+        let MASTER_COMPANIES = ['Toyota','Ather','AMS'];
+        let MASTER_BRANCHES = ['Coimbatore','Erode','Tiruppur','Mettupalayam','Udumalpet','Dharapuram','Madampatti','Pollachi','Ooty','Kangayam','Bhavani'];
+        let MASTER_DEPARTMENTS = ['Marketing','Insurance','Eco Wash','Towing Service','Driver Service','BrakeDown Service'];
+
+        // Auth & Role State
+        let isSuperAdmin = false;
+        let userRole = null; // "master" or "admin"
+        let userDepartments = []; // For admin filtering
+        let currentAdminName = '';
+        let adminPermissions = {}; // { canAddStaff, canDeleteStaff, ... }
+
+        // --- Constants ---
+        const PROTECTED_SUPER_ADMIN_ID = 'digital_service_in'; // DO NOT allow editing/deleting this admin
+
+        // --- Firebase Config ---
+        const firebaseConfig = {
+          apiKey: "AIzaSyCzwX3d7NwtKc209p5DJwPlSedKBUu3nkQ",
+          authDomain: "itrack-staff.firebaseapp.com",
+          projectId: "itrack-staff",
+          storageBucket: "itrack-staff.firebasestorage.app",
+          messagingSenderId: "939818786879",
+          appId: "1:939818786879:web:4ed8c43dc732579191588a",
+          measurementId: "G-M0HGZ7W663"
+        };
+        
+        const staffCollectionPath = `staff`;
+        const geofenceCollectionPath = `geofences`;
+        
+        // --- UI Elements ---
+        const connectionStatusEl = document.getElementById('connection-status');
+        const staffListEl = document.getElementById('staff-list');
+        const loadingStaffEl = document.getElementById('loading-staff');
+        
+        // Login UI
+        const loginPage = document.getElementById('login-page');
+        const loginEmail = document.getElementById('login-email');
+        const loginPassword = document.getElementById('login-password');
+        const loginBtn = document.getElementById('login-btn');
+        const togglePasswordBtn = document.getElementById('toggle-password');
+        const loginError = document.getElementById('login-error');
+
+        // Add Staff Modal UI
+        const addStaffSection = document.getElementById('add-staff-section');
+        const addStaffModal = document.getElementById('add-staff-modal');
+        const openAddStaffModalBtn = document.getElementById('open-add-staff-modal-btn');
+        const newStaffNameInput = document.getElementById('new-staff-name');
+        const newStaffPhoneInput = document.getElementById('new-staff-phone');
+        const newStaffCompanySelect = document.getElementById('new-staff-company');
+        const newStaffCompanyOther = document.getElementById('new-staff-company-other');
+        const newStaffBranchSelect = document.getElementById('new-staff-branch');
+        const newStaffBranchOther = document.getElementById('new-staff-branch-other');
+        const newStaffDeptSelect = document.getElementById('new-staff-dept');
+        const newStaffDeptOther = document.getElementById('new-staff-dept-other');
+        const cancelAddStaffBtn = document.getElementById('cancel-add-staff-btn');
+        const addStaffBtn = document.getElementById('add-staff-btn');
+        
+        // Edit Staff Modal UI
+        const editModal = document.getElementById('edit-modal');
+        const editStaffIdInput = document.getElementById('edit-staff-id');
+        const editStaffNameInput = document.getElementById('edit-staff-name');
+        const editStaffPhoneInput = document.getElementById('edit-staff-phone');
+        const editStaffCompanySelect = document.getElementById('edit-staff-company');
+        const editStaffCompanyOther = document.getElementById('edit-staff-company-other');
+        const editStaffBranchSelect = document.getElementById('edit-staff-branch');
+        const editStaffBranchOther = document.getElementById('edit-staff-branch-other');
+        const editStaffDeptSelect = document.getElementById('edit-staff-dept');
+        const editStaffDeptOther = document.getElementById('edit-staff-dept-other');
+        const cancelEditBtn = document.getElementById('cancel-edit-btn');
+        const saveEditBtn = document.getElementById('save-edit-btn');
+        const deleteStaffBtn = document.getElementById('delete-staff-btn');
+        
+        
+        // Geofence Modal UI
+        const geofenceModal = document.getElementById('geofence-modal');
+        const geofenceModalTitle = document.getElementById('geofence-modal-title');
+        const editGeofenceIdInput = document.getElementById('edit-geofence-id');
+        const geofenceNameInput = document.getElementById('geofence-name');
+        const cancelGeofenceBtn = document.getElementById('cancel-geofence-btn');
+        const saveGeofenceBtn = document.getElementById('save-geofence-btn');
+        const assignAllStaffCheckbox = document.getElementById('assign-all-staff');
+        const geofenceStaffListEl = document.getElementById('geofence-staff-list');
+        const geofenceStaffSearchInput = document.getElementById('geofence-staff-search');
+        
+        // Message Modal UI
+        const messageModal = document.getElementById('message-modal');
+        const messageTitle = document.getElementById('message-title');
+        const messageText = document.getElementById('message-text');
+        const messageButtonsEl = document.getElementById('message-buttons');
+        let messageOkBtn = document.getElementById('message-ok-btn');
+        let messageCancelBtn = document.getElementById('message-cancel-btn');
+        
+        // Geofence UI
+        const createGeofenceBtn = document.getElementById('create-geofence-btn');
+        const geofenceListEl = document.getElementById('geofence-list');
+        const loadingGeofencesEl = document.getElementById('loading-geofences');
+        
+        // Search Bar UI
+        const searchInput = document.getElementById('search-input');
+        const searchResultsEl = document.getElementById('search-results');
+        
+        // Filter Modal UI
+        const filterIconBtn = document.getElementById('filter-icon-btn');
+        const filterModal = document.getElementById('filter-modal');
+        const filterCompanyList = document.getElementById('filter-company-list');
+        const filterBranchList = document.getElementById('filter-branch-list');
+        const filterDeptList = document.getElementById('filter-dept-list');
+        const filterStaffList = document.getElementById('filter-staff-list');
+        const filterStatusList = document.getElementById('filter-status-list');
+        const cancelFilterBtn = document.getElementById('cancel-filter-btn');
+        const clearFiltersBtn = document.getElementById('clear-filters-btn');
+        const applyFiltersBtn = document.getElementById('apply-filters-btn');
+        // Clear History Path UI
+        const clearPathBtn = document.getElementById('clear-path-btn');
+        
+        // History Modal UI
+        const historyModal = document.getElementById('history-modal');
+        const historyStaffIdInput = document.getElementById('history-staff-id');
+        const historyStaffNameEl = document.getElementById('history-staff-name');
+        const historyDatePicker = document.getElementById('history-date-picker');
+        const cancelHistoryBtn = document.getElementById('cancel-history-btn');
+        const showHistoryBtn = document.getElementById('show-history-btn');
+
+        // Day Report Modal UI
+        const dayReportModal = document.getElementById('day-report-modal');
+        const reportStaffNameEl = document.getElementById('report-staff-name');
+        const reportDateEl = document.getElementById('report-date');
+        const dayReportListEl = document.getElementById('day-report-list');
+        const closeReportBtn = document.getElementById('close-report-btn');
+
+
+        // Admin Modal UI
+        const adminControlsSection = document.getElementById('admin-controls');
+        const addAdminModal = document.getElementById('add-admin-modal');
+        const openAddAdminModalBtn = document.getElementById('open-add-admin-modal-btn');
+        const cancelAddAdminBtn = document.getElementById('cancel-add-admin-btn');
+        const addAdminBtn = document.getElementById('add-admin-btn');
+        const newAdminNameInput = document.getElementById('new-admin-name');
+        const newAdminEmailInput = document.getElementById('new-admin-email');
+        const newAdminPasswordInput = document.getElementById('new-admin-password');
+        const newAdminRoleSelect = document.getElementById('new-admin-role');
+        const departmentsSection = document.getElementById('departments-section');
+        const departmentsCheckboxes = document.getElementById('departments-checkboxes');
+        const permAddStaff = document.getElementById('perm-add-staff');
+        const permDeleteStaff = document.getElementById('perm-delete-staff');
+        const permEditStaff = document.getElementById('perm-edit-staff');
+        const permManageGeofence = document.getElementById('perm-manage-geofence');
+        const permManageAdmins = document.getElementById('perm-manage-admins');
+
+        // Logout UI
+        const logoutBtn = document.getElementById('logout-btn');
+        const adminInfoEl = document.getElementById('admin-info');
+
+        // Manage Admins UI
+        const openManageAdminsBtn = document.getElementById('open-manage-admins-btn');
+        const closeManageAdminsBtn = document.getElementById('close-manage-admins-btn');
+        const manageAdminsModal = document.getElementById('manage-admins-modal');
+        const adminsList = document.getElementById('admins-list');
+
+        const editAdminModal = document.getElementById('edit-admin-modal');
+        const editAdminId = document.getElementById('edit-admin-id');
+        const editAdminName = document.getElementById('edit-admin-name');
+        const editAdminEmail = document.getElementById('edit-admin-email');
+        const editAdminRole = document.getElementById('edit-admin-role');
+        const editDepartmentsCheckboxes = document.getElementById('edit-departments-checkboxes');
+        const saveEditAdminBtn = document.getElementById('save-edit-admin-btn');
+        const deleteAdminBtn = document.getElementById('delete-admin-btn');
+        const cancelEditAdminBtn = document.getElementById('cancel-edit-admin-btn');
+
+        // --- Helper Functions ---
+        function escapeHTML(s) { return String(s==null?'':s).replace(/[&<>\"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#039;'})[m]); } 
+        function escapeAttr(s) { return String(s==null?'':s).replace(/[&<>\"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#039;'})[m]); }
+        function formatDuration(s) { s=Math.floor(s||0); const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), sec=s%60; const p=n=>String(n).padStart(2,'0'); return `${p(h)}:${p(m)}:${p(sec)}`; } 
+        function formatTimestamp(ts) { if (!ts) return "N/A"; try { return ts.toDate().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}); } catch(e){ return "Invalid"; } }
+        // deterministic tiny hash -> 0..n-1
+        function hashSlot(str, slots){ let h=0; for(let i=0;i<str.length;i++){ h=(h*31 + str.charCodeAt(i))|0; } h=Math.abs(h); return h%slots; }
+        function getLabelOffsetForId(id){
+            // Keep a constant vertical offset above the marker tip (~41px icon height)
+            const Y = -44; // fixed vertical lift so label sits just above the marker
+            const X_OPTIONS = [-18,-12,-6,0,6,12,18]; // small horizontal jitter only
+            const x = X_OPTIONS[hashSlot(String(id||''), X_OPTIONS.length)];
+            return [x, Y];
+        }
+        
+        // Small helpers for master list updates/UI refresh
+        function isVisible(el){ return !!el && !el.classList.contains('hidden'); }
+        function addToLocalMasterLists(company, branch, dept){
+            const add = (arr, v) => { if (v && !arr.includes(v)) arr.push(v); };
+            add(MASTER_COMPANIES, company); add(MASTER_BRANCHES, branch); add(MASTER_DEPARTMENTS, dept);
+            // refresh UIs if open
+            if (isVisible(document.getElementById('add-admin-modal'))) populateDepartmentsCheckboxes();
+            if (isVisible(document.getElementById('edit-admin-modal'))) rebuildEditDepartmentsCheckboxesFromCurrentSelection();
+            if (isFilterModalOpen) populateFilterModal();
+        }
+        function rebuildEditDepartmentsCheckboxesFromCurrentSelection(){
+            if (!editDepartmentsCheckboxes) return;
+            const selected = new Set();
+            editDepartmentsCheckboxes.querySelectorAll('input[type="checkbox"]:checked').forEach(cb=>selected.add(cb.value));
+            editDepartmentsCheckboxes.innerHTML = '';
+            [...MASTER_DEPARTMENTS].sort().forEach(dept => {
+                const label = document.createElement('label');
+                label.className = 'flex items-center space-x-2 text-gray-200 cursor-pointer';
+                label.innerHTML = `
+                    <input type=\"checkbox\" value=\"${escapeAttr(dept)}\" class=\"edit-department-checkbox h-4 w-4\" ${selected.has(dept)?'checked':''}>
+                    <span>${escapeHTML(dept)}</span>
+                `;
+                editDepartmentsCheckboxes.appendChild(label);
+            });
+        }
+        
+        // Update all Company/Branch/Dept selects from master lists
+        function refreshCompanyBranchDeptSelects(){
+            const update = (selectEl, items, placeholder, currentValue) => {
+                if (!selectEl) return;
+                const val = currentValue ?? selectEl.value;
+                const opts = [ `<option value=\"\">${placeholder}</option>`, ...items.map(v=>`<option value=\"${escapeAttr(v)}\">${escapeHTML(v)}</option>`), `<option value=\"Other\">Other (Specify)</option>` ];
+                selectEl.innerHTML = opts.join('');
+                // try to restore selection
+                if (val && items.includes(val)) selectEl.value = val; else if (val && !items.includes(val) && val !== 'Other') selectEl.value = 'Other';
+            };
+            update(newStaffCompanySelect, [...MASTER_COMPANIES].sort(), 'Select Company');
+            update(newStaffBranchSelect, [...MASTER_BRANCHES].sort(), 'Select Branch');
+            update(newStaffDeptSelect, [...MASTER_DEPARTMENTS].sort(), 'Select Department');
+            update(editStaffCompanySelect, [...MASTER_COMPANIES].sort(), 'Select Company');
+            update(editStaffBranchSelect, [...MASTER_BRANCHES].sort(), 'Select Branch');
+            update(editStaffDeptSelect, [...MASTER_DEPARTMENTS].sort(), 'Select Department');
+        }
+        
+        // Load master lists from Firestore (with defaults) and live-update
+        async function loadMasterLists(){
+            if (!db) return;
+            const ref = doc(db, 'settings', 'masterLists');
+            try {
+                const snap = await getDoc(ref);
+                if (snap.exists()) {
+                    const data = snap.data() || {};
+                    if (Array.isArray(data.companies) && data.companies.length) MASTER_COMPANIES = data.companies;
+                    if (Array.isArray(data.branches) && data.branches.length) MASTER_BRANCHES = data.branches;
+                    if (Array.isArray(data.departments) && data.departments.length) MASTER_DEPARTMENTS = data.departments;
+                } else {
+                    // seed with defaults
+                    await setDoc(ref, { companies: MASTER_COMPANIES, branches: MASTER_BRANCHES, departments: MASTER_DEPARTMENTS }, { merge: true });
+                }
+                refreshCompanyBranchDeptSelects();
+                // live updates
+                onSnapshot(ref, (docSnap)=>{
+                    const data = docSnap.data() || {};
+                    if (Array.isArray(data.companies)) MASTER_COMPANIES = data.companies;
+                    if (Array.isArray(data.branches)) MASTER_BRANCHES = data.branches;
+                    if (Array.isArray(data.departments)) MASTER_DEPARTMENTS = data.departments;
+                    refreshCompanyBranchDeptSelects();
+                    if (isFilterModalOpen) populateFilterModal();
+                    if (isVisible(document.getElementById('add-admin-modal'))) populateDepartmentsCheckboxes();
+                    if (isVisible(document.getElementById('edit-admin-modal'))) rebuildEditDepartmentsCheckboxesFromCurrentSelection();
+                });
+            } catch(e){ console.warn('loadMasterLists failed:', e); }
+        }
+
+        // Ensure a default Super Admin exists in the admins collection
+        async function ensureDefaultSuperAdmin(){
+            try {
+                if (!db) return;
+                const email = 'digital@service.in';
+                const password = 'passwayTsmart25';
+                const adminId = email.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                const ref = doc(db, 'admins', adminId);
+                const snap = await getDoc(ref);
+                if (!snap.exists()) {
+                    await setDoc(ref, {
+                        name: 'Super Admin',
+                        email,
+                        password,
+                        role: 'master',
+                        departments: [],
+                        permissions: {
+                            canAddStaff: true,
+                            canDeleteStaff: true,
+                            canEditStaff: true,
+                            canManageGeofence: true,
+                            canManageAdmins: true,
+                        },
+                        createdBy: null,
+                        createdAt: Timestamp.now(),
+                    });
+                    console.log('Default Super Admin created');
+                }
+            } catch (e) {
+                console.warn('ensureDefaultSuperAdmin failed:', e);
+            }
+        }
+
+        // --- Login System ---
+        
+        // Toggle password visibility
+        if (togglePasswordBtn) {
+            togglePasswordBtn.addEventListener('click', () => {
+                const isPwd = loginPassword.type === 'password';
+                loginPassword.type = isPwd ? 'text' : 'password';
+            });
+        }
+
+        // Handle login
+        if (loginBtn) {
+            loginBtn.addEventListener('click', handleLogin);
+            if (loginEmail) loginEmail.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleLogin(); });
+            if (loginPassword) loginPassword.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleLogin(); });
+        }
+
+        async function handleLogin() {
+            // Ensure Firestore is initialized before using collection/doc
+            if (!db) {
+                await initializeAuth();
+                if (!db) {
+                    showLoginError('Database not initialized. Please try again.');
+                    return;
+                }
+            }
+            const email = (loginEmail?.value || '').trim();
+            const password = (loginPassword?.value || '').trim();
+            
+            if (!email || !password) {
+                showLoginError('Please enter email and password.');
+                return;
+            }
+            
+            loginBtn.disabled = true;
+            loginBtn.textContent = 'Signing in...';
+            
+            try {
+                let adminSnap = null;
+                let adminId = null;
+                let adminData = null;
+                
+                // First, try to find by email-based ID (new format)
+                const emailBasedId = email.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                adminSnap = await getDoc(doc(db, 'admins', emailBasedId));
+                
+                if (adminSnap.exists()) {
+                    adminId = emailBasedId;
+                    adminData = adminSnap.data();
+                } else {
+                    // If not found, search all admins collection for matching email
+                    const adminsSnap = await getDocs(collection(db, 'admins'));
+                    for (const doc of adminsSnap.docs) {
+                        const data = doc.data();
+                        if (data.email === email) {
+                            adminId = doc.id;
+                            adminData = data;
+                            break;
+                        }
+                    }
+                }
+                
+                if (!adminId || !adminData) {
+                    throw new Error('Admin account not found.');
+                }
+                
+                // Verify password matches
+                if (adminData.password !== password) {
+                    throw new Error('Invalid password.');
+                }
+                
+                // Set up user session data
+                userRole = adminData.role; // "master" or "admin"
+                isSuperAdmin = userRole === 'master';
+                userDepartments = adminData.departments || [];
+                currentAdminName = adminData.name || email;
+                adminPermissions = adminData.permissions || {};
+                
+                // Store admin ID in sessionStorage for persistence
+                sessionStorage.setItem('adminId', adminId);
+                sessionStorage.setItem('adminEmail', email);
+                sessionStorage.setItem('adminRole', userRole);
+                
+                // Update status
+                if (connectionStatusEl) { 
+                    connectionStatusEl.textContent = "Connected.";
+                    connectionStatusEl.classList.replace('text-red-400', 'text-green-400');
+                }
+                
+                // Initialize dashboard listeners
+                updateAdminControlsVisibility();
+                listenForStaffUpdates();
+                listenForGeofenceUpdates();
+                
+                // ONLY HIDE LOGIN AFTER SUCCESSFUL AUTHENTICATION
+                if (loginPage) loginPage.classList.add('hidden');
+                
+                // Clear inputs
+                if (loginEmail) loginEmail.value = '';
+                if (loginPassword) loginPassword.value = '';
+                
+                showMessage('Success', `Welcome, ${currentAdminName}!`);
+                
+            } catch (error) {
+                console.error('Login error:', error);
+                showLoginError(error.message || 'Login failed. Check credentials.');
+                // Make sure login page is visible on error
+                if (loginPage) loginPage.classList.remove('hidden');
+            } finally {
+                loginBtn.disabled = false;
+                loginBtn.textContent = 'Sign In';
+            }
+        }
+
+        function showLoginError(msg) {
+            if (loginError) {
+                loginError.textContent = msg;
+                loginError.classList.remove('hidden');
+                setTimeout(() => loginError.classList.add('hidden'), 5000);
+            }
+        }
+
+        // --- Initialize Map ---
+        function initializeMap() {
+            // Start closer in; allow higher zoom levels
+            map = L.map('map', { maxZoom: 20, minZoom: 2 }).setView([11.0168, 76.9558], 15);
+
+            // Base layers
+            const osmStd = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 20,
+                attribution: '&copy; OpenStreetMap contributors'
+            });
+            const esriSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+                maxZoom: 19,
+                attribution: 'Tiles  a9 Esri'
+            });
+
+            // Default to OSM for reliability; Satellite available via layer switcher
+            osmStd.addTo(map);
+
+            // 3D buildings overlay (drawn above any base if data available)
+            let osmb = null;
+            try { if (window.OSMBuildings) { osmb = new OSMBuildings(map); osmb.load(); } } catch(e) { console.warn('OSMBuildings init failed:', e); }
+
+            // Layer control (bottom-right to avoid overlapping top-right buttons)
+            const baseLayers = { 'OSM Standard': osmStd, 'Satellite (Esri)': esriSat };
+            try { L.control.layers(baseLayers, {}, { position: 'bottomright', collapsed: true }).addTo(map); } catch(e) {}
+
+            // If satellite tiles fail repeatedly, auto-switch back to OSM
+            let esriErrorCount = 0;
+            esriSat.on('tileerror', () => {
+                esriErrorCount++;
+                if (esriErrorCount >= 5) {
+                    if (map.hasLayer(esriSat)) { map.removeLayer(esriSat); osmStd.addTo(map); }
+                    esriErrorCount = 0;
+                }
+            });
+
+            blueIcon = new L.Icon({
+                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+                shadowUrl: null, iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [0, 0]
+            });
+            greyIcon = new L.Icon({
+                iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-grey.png',
+                shadowUrl: null, iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [0, 0]
+            });
+            
+            drawnItems = new L.FeatureGroup();
+            map.addLayer(drawnItems);
+            
+            drawControl = new L.Draw.Circle(map, {
+                shapeOptions: { color: '#8B5CF6', fillColor: '#C4B5FD', fillOpacity: 0.5 }
+            });
+
+            map.on(L.Draw.Event.CREATED, (e) => {
+                tempGeofenceData = { center: e.layer.getLatLng(), radius: e.layer.getRadius() };
+                openCreateGeofenceModal();
+            });
+            map.on(L.Draw.Event.DRAWSTART, () => { if (createGeofenceBtn) { createGeofenceBtn.disabled = true; createGeofenceBtn.textContent = "Drawing..."; } });
+            map.on(L.Draw.Event.DRAWSTOP, () => { if (createGeofenceBtn) { createGeofenceBtn.disabled = false; createGeofenceBtn.textContent = "Create New Geofence (Circle)"; } });
+            map.on('draw:canceled', () => { tempGeofenceData = null; });
+            
+             // Disable map interactions for search, filter, and clear-path buttons
+             [searchInput, filterIconBtn, clearPathBtn].forEach(el => {
+                 if (el) {
+                     const container = el.closest('div') || el;
+                     if (container) { 
+                         L.DomEvent.disableClickPropagation(container); 
+                         L.DomEvent.disableScrollPropagation(container); 
+                     }
+                 }
+             });
+        }
+
+        // --- Initialize Firebase ---
+        async function initializeAuth() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                isSupported().then(ok => { if (ok) getAnalytics(app); }).catch(() => {});
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Ensure app has a Firebase Auth session (anonymous) so Firestore rules with auth != null pass
+                try { await signInAnonymously(auth); } catch (e) { console.warn('Anonymous sign-in failed:', e?.message || e); }
+                
+                // Load master lists and ensure default Super Admin
+                await Promise.all([
+                    loadMasterLists(),
+                    ensureDefaultSuperAdmin()
+                ]);
+                
+                // Show login page on initial load - DO NOT auto-login
+                if (loginPage) loginPage.classList.remove('hidden');
+                if (connectionStatusEl) connectionStatusEl.textContent = "Ready to login";
+            } catch (error) {
+                console.error("Auth Init Error:", error);
+                if (connectionStatusEl) connectionStatusEl.textContent = `Connection failed: ${error.message}`;
+            }
+        }
+
+        async function determineMasterAdmin() {
+            try {
+                if (!auth || !auth.currentUser || !db) { 
+                    isSuperAdmin = false; 
+                    userRole = null;
+                    // Show login page if no user
+                    if (loginPage) loginPage.classList.remove('hidden');
+                    return; 
+                }
+                const uid = auth.currentUser.uid;
+                const snap = await getDoc(doc(db, 'admins', uid));
+                if (snap.exists()) {
+                    const adminData = snap.data();
+                    isSuperAdmin = adminData.role === 'master';
+                    userRole = adminData.role;
+                    userDepartments = adminData.departments || [];
+                    currentAdminName = adminData.name || adminData.email;
+                    // Only hide login AFTER confirming user is admin
+                    if (loginPage) loginPage.classList.add('hidden');
+                } else {
+                    // User exists in Firebase Auth but not in admins collection
+                    isSuperAdmin = false;
+                    userRole = null;
+                    // Sign out and show login
+                    auth.signOut();
+                    if (loginPage) loginPage.classList.remove('hidden');
+                    showLoginError('Not authorized as admin.');
+                }
+            } catch (e) {
+                console.error('Role check failed:', e);
+                isSuperAdmin = false;
+                userRole = null;
+                if (loginPage) loginPage.classList.remove('hidden');
+            }
+        }
+
+        function updateAdminControlsVisibility() {
+            // Show admin controls only for Super Admin
+            const canManageAdmins = !!isSuperAdmin || !!adminPermissions?.canManageAdmins;
+            if (adminControlsSection) adminControlsSection.classList.toggle('hidden', !canManageAdmins);
+            
+            // Show Add Staff button if Super Admin OR admin has canAddStaff permission
+            const canAddStaff = !!isSuperAdmin || !!adminPermissions?.canAddStaff;
+            if (addStaffSection) addStaffSection.classList.toggle('hidden', !canAddStaff);
+            
+            // Update admin info display
+            if (adminInfoEl && currentAdminName) {
+                const roleText = isSuperAdmin ? 'Super Admin' : 'Admin';
+                adminInfoEl.textContent = `Logged in as: ${currentAdminName} (${roleText})`;
+                adminInfoEl.classList.remove('hidden');
+            }
+        }
+
+        // Logout function with confirmation
+        async function handleLogout() {
+            // Show confirmation dialog
+            showConfirmation(
+                'Confirm Logout',
+                'Are you sure you want to logout?',
+                async () => {
+                    try {
+                        // Clear session storage
+                        sessionStorage.removeItem('adminId');
+                        sessionStorage.removeItem('adminEmail');
+                        sessionStorage.removeItem('adminRole');
+                        
+                        // Reset all state
+                        isSuperAdmin = false;
+                        userRole = null;
+                        userDepartments = [];
+                        currentAdminName = '';
+                        staffDataCache = {};
+                        geofencesCache = {};
+                        
+                        // Clear UI
+                        if (staffListEl) staffListEl.innerHTML = '';
+                        if (geofenceListEl) geofenceListEl.innerHTML = '';
+                        if (adminInfoEl) adminInfoEl.classList.add('hidden');
+                        
+                        // Show login page
+                        if (loginPage) loginPage.classList.remove('hidden');
+                        if (connectionStatusEl) connectionStatusEl.textContent = 'Logged out. Please log in again.';
+                        
+                        showMessage('Logged Out', 'You have been successfully logged out.');
+                    } catch (error) {
+                        console.error('Logout error:', error);
+                        showMessage('Error', 'Failed to logout.');
+                    }
+                }
+            );
+        }
+
+        // --- Database Listeners ---
+        function listenForStaffUpdates() {
+             if (!db) return; 
+            onSnapshot(collection(db, staffCollectionPath), (snapshot) => {
+                let changed = false;
+                if (snapshot.empty && Object.keys(staffDataCache).length > 0) { changed = true; staffDataCache = {}; }
+                snapshot.docChanges().forEach((change) => {
+                    changed = true;
+                    const id = change.doc.id, data = change.doc.data();
+                    if (change.type === "removed") {
+                        delete staffDataCache[id];
+                        if (map && staffMarkers[id]) map.removeLayer(staffMarkers[id]); delete staffMarkers[id]; 
+                        if (map && currentHistoryPath && currentHistoryPath.staffId === id) { map.removeLayer(currentHistoryPath); currentHistoryPath = null; updateClearPathBtnVisibility(); }
+                    } else {
+                        staffDataCache[id] = { id, data: data || {}, geofenceState: staffDataCache[id]?.geofenceState || {} }; 
+                    }
+                });
+                if (changed) {
+                    renderUI(); 
+                    if (searchInput?.value.trim().length > 0 && !searchResultsEl?.classList.contains('hidden')) { handleSearch(); }
+                    if (isFilterModalOpen) { populateFilterModal(); } 
+                }
+            }, (error) => { console.error("Staff listener error:", error); if (connectionStatusEl) connectionStatusEl.textContent = "DB Listen Error."; });
+        }
+        
+        function listenForGeofenceUpdates() {
+             if (!db || !geofenceListEl || !drawnItems || !loadingGeofencesEl) return; 
+            onSnapshot(collection(db, geofenceCollectionPath), (snapshot) => {
+                geofenceListEl.innerHTML = '';
+                drawnItems.clearLayers(); geofencesCache = {};
+                if (snapshot.empty) { loadingGeofencesEl.textContent = "No geofences."; loadingGeofencesEl.style.display = 'block'; renderUI(); return; }
+                loadingGeofencesEl.style.display = 'none';
+                snapshot.forEach((doc) => {
+                    const fence = doc.data(), id = doc.id;
+                    if (!fence.center?.lat || !fence.center?.lng) { console.warn("Invalid fence center:", id); return; }
+                    const layer = L.circle(fence.center, { radius: fence.radius, color: '#8B5CF6', fillColor: '#C4B5FD', fillOpacity: 0.3 })
+                                  .bindTooltip(fence.name, { permanent: true, direction: 'center', className: 'leaflet-tooltip bg-gray-800 text-white border border-purple-400 px-1 py-0.5 rounded text-xs', opacity: 0.8 });
+                    drawnItems.addLayer(layer);
+                    geofencesCache[id] = { id, ...fence, layer };
+                    let assignText = (fence.assignedStaff?.[0] === 'all') ? "All Staff" : `${fence.assignedStaff?.length || 0} staff`;
+                    const li = document.createElement('div'); li.className = "flex justify-between items-center bg-gray-800 p-2 rounded";
+                    li.innerHTML = `<div class="flex-grow overflow-hidden mr-2"><span class="font-medium text-purple-300 block truncate" title="${escapeAttr(fence.name)}">${escapeHTML(fence.name)}</span><span class="text-xs text-gray-400">Assigned to: ${assignText}</span></div><div class="flex-shrink-0"><button class="edit-geofence-btn text-blue-400 hover:text-blue-200 text-sm font-medium mr-2" data-id="${id}">Edit</button><button class="delete-geofence-btn text-red-400 hover:text-red-200 text-sm font-medium" data-id="${id}">&times; Delete</button></div>`;
+                    geofenceListEl.appendChild(li);
+                });
+                renderUI();
+            }, (error) => { console.error("Geofence listener error:", error); loadingGeofencesEl.textContent = "Error loading."; });
+        }
+
+        // --- Staff Filtering by Department ---
+        function applyCurrentFilters() {
+            const { companies, branches, departments, staffIds, statuses } = currentFilterState;
+            
+            let filtered = Object.values(staffDataCache).filter(staff => {
+                if (!staff || !staff.data) return false;
+                
+                // ADMIN DEPARTMENT FILTER (new)
+                if (userRole === 'admin' && userDepartments.length > 0) {
+                    const staffDept = staff.data.dept || 'Unassigned';
+                    if (!userDepartments.includes(staffDept)) {
+                        return false; // Admin can only see their department staff
+                    }
+                }
+                
+                // ... rest of existing filters (companies, branches, etc.)
+                const staffCompany = staff.data.company || 'Unassigned';
+                if (companies.size > 0 && !companies.has(staffCompany)) return false;
+                
+                const staffBranch = staff.data.branch || 'Unassigned';
+                if (branches.size > 0 && !branches.has(staffBranch)) return false;
+
+                const staffDept = staff.data.dept || 'Unassigned';
+                if (departments.size > 0 && !departments.has(staffDept)) return false;
+
+                if (staffIds.size > 0 && !staffIds.has(staff.id)) return false;
+
+                // Status filter (connectivity status + optional manual status field)
+                if (statuses.size > 0) {
+                    const cardStatus = getCardStatus(staff.data);
+                    const connectivityStatus = cardStatus.raw; // 'online', 'no-signal', 'offline'
+                    const manualStatus = staff.data.status || null;
+                    if (!statuses.has(connectivityStatus) && !(manualStatus && statuses.has(manualStatus))) return false;
+                }
+                
+                return true;
+            });
+            
+            return filtered;
+        }
+
+        // --- Save/Delete Functions ---
+        async function saveGeofence() {
+             if (!geofenceNameInput || !editGeofenceIdInput || !assignAllStaffCheckbox || !geofenceStaffListEl || !saveGeofenceBtn) return; 
+            const name = geofenceNameInput.value.trim(), editId = editGeofenceIdInput.value;
+            if (!name) { showMessage("Invalid Name", "Please enter a name."); return; }
+            let assignedStaff = assignAllStaffCheckbox.checked ? ["all"] : [...geofenceStaffListEl.querySelectorAll('input:checked')].map(cb => cb.value);
+            saveGeofenceBtn.disabled = true; saveGeofenceBtn.textContent = "Saving...";
+            try {
+                if (editId) {
+                    if (!geofencesCache[editId]) throw new Error("Fence not found.");
+                    await updateDoc(doc(db, geofenceCollectionPath, editId), { name, assignedStaff });
+                } else {
+                    if (!tempGeofenceData) throw new Error("No draw data.");
+                    await addDoc(collection(db, geofenceCollectionPath), { name, center: { lat: tempGeofenceData.center.lat, lng: tempGeofenceData.center.lng }, radius: tempGeofenceData.radius, assignedStaff });
+                } closeGeofenceModal();
+            } catch (error) { console.error("Save geofence error:", error); showMessage("Error", "Could not save geofence."); }
+            finally { if(saveGeofenceBtn){ saveGeofenceBtn.disabled = false; saveGeofenceBtn.textContent = "Save"; } }
+        }
+        async function deleteGeofence(id) {
+            if (!id || !geofencesCache[id]) return;
+            showConfirmation("Confirm Delete", `Delete "${escapeHTML(geofencesCache[id]?.name)}"?`, async () => {
+                try { await deleteDoc(doc(db, geofenceCollectionPath, id)); console.log("Fence deleted:", id); closeMessageModal(); }
+                catch (error) { console.error("Delete fence error:", error); showMessage("Error", "Could not delete."); }
+            });
+        }
+        async function confirmDeleteStaff(id, name) {
+            if (!id) return;
+            showConfirmation("Confirm Delete Staff", `PERMANENTLY delete "${escapeHTML(name)}"? This deletes all history.`, async () => {
+                try {
+                    const historyRef = collection(db, staffCollectionPath, id, "history"); const historySnap = await getDocs(historyRef);
+                    let batch = writeBatch(db), count = 0;
+                    historySnap.forEach(d => { batch.delete(d.ref); count++; if (count > 0 && count % 499 === 0) { batch.commit().then(() => batch = writeBatch(db)); } });
+                    await batch.commit(); await deleteDoc(doc(db, staffCollectionPath, id));
+                    console.log(`Staff ${id} deleted (${count} history points).`); closeMessageModal(); closeEditModal();
+                } catch (error) { console.error("Delete staff error:", error); showMessage("Error", "Could not delete staff/history."); }
+            });
+        }
+
+        async function confirmDeleteAdmin(adminId, adminName) {
+            if (adminId === PROTECTED_SUPER_ADMIN_ID) { showMessage('Protected', 'This Super Admin cannot be deleted.'); return; }
+            showConfirmation('Delete Admin', `Permanently delete admin "${escapeHTML(adminName)}"?`, async () => {
+                try {
+                    if (!adminId) {
+                        throw new Error('Admin ID not found.');
+                    }
+                    await deleteDoc(doc(db, 'admins', adminId));
+                    showMessage('Success', 'Admin deleted.');
+                    closeEditAdminModal();
+                    openManageAdminsModal();
+                } catch (error) {
+                    console.error('Delete admin error:', error);
+                    showMessage('Error', `Could not delete admin: ${error.message}`);
+                }
+            });
+        }
+        
+        // Helper to get value from select/other input
+        function getSelectOtherValue(selectEl, otherEl) {
+            const selectedValue = selectEl.value;
+            if (selectedValue === 'Other') {
+                return otherEl.value.trim() || null;
+            }
+            return selectedValue || null;
+        }
+
+        // Helper to set value for select/other input
+        function setSelectOtherValue(selectEl, otherEl, value) {
+            if (!selectEl || !otherEl) return;
+            const options = Array.from(selectEl.options).map(opt => opt.value);
+            if (options.includes(value)) {
+                selectEl.value = value;
+                otherEl.classList.add('hidden');
+                otherEl.value = '';
+            } else if (value) { // Handle custom value
+                selectEl.value = 'Other';
+                otherEl.classList.remove('hidden');
+                otherEl.value = value;
+            } else { // Handle null/empty value
+                selectEl.value = '';
+                otherEl.classList.add('hidden');
+                otherEl.value = '';
+            }
+        }
+        
+        // Helper to manage all "Other" text inputs
+        function setupSelectOtherListeners() {
+            // Add Staff Modal
+            if (newStaffCompanySelect) newStaffCompanySelect.addEventListener('change', () => newStaffCompanyOther.classList.toggle('hidden', newStaffCompanySelect.value !== 'Other'));
+            if (newStaffBranchSelect) newStaffBranchSelect.addEventListener('change', () => newStaffBranchOther.classList.toggle('hidden', newStaffBranchSelect.value !== 'Other'));
+            if (newStaffDeptSelect) newStaffDeptSelect.addEventListener('change', () => newStaffDeptOther.classList.toggle('hidden', newStaffDeptSelect.value !== 'Other'));
+            
+            // Edit Staff Modal
+            if (editStaffCompanySelect) editStaffCompanySelect.addEventListener('change', () => editStaffCompanyOther.classList.toggle('hidden', editStaffCompanySelect.value !== 'Other'));
+            if (editStaffBranchSelect) editStaffBranchSelect.addEventListener('change', () => editStaffBranchOther.classList.toggle('hidden', editStaffBranchSelect.value !== 'Other'));
+            if (editStaffDeptSelect) editStaffDeptSelect.addEventListener('change', () => editStaffDeptOther.classList.toggle('hidden', editStaffDeptSelect.value !== 'Other'));
+
+            // Admin Role select
+            if (newAdminRoleSelect) {
+                newAdminRoleSelect.addEventListener('change', () => {
+                    const isAdmin = newAdminRoleSelect.value === 'admin';
+                    if (departmentsSection) {
+                        departmentsSection.classList.toggle('hidden', !isAdmin);
+                    }
+                    if (isAdmin) populateDepartmentsCheckboxes();
+                });
+            }
+        }
+
+        // Populate departments checkboxes from master list
+        function populateDepartmentsCheckboxes() {
+            if (!departmentsCheckboxes) return;
+            departmentsCheckboxes.innerHTML = '';
+            [...MASTER_DEPARTMENTS].sort().forEach(dept => {
+                const label = document.createElement('label');
+                label.className = 'flex items-center space-x-2 text-gray-200 cursor-pointer';
+                label.innerHTML = `
+                    <input type=\"checkbox\" value=\"${escapeAttr(dept)}\" class=\"edit-department-checkbox h-4 w-4\">
+                    <span>${escapeHTML(dept)}</span>
+                `;
+                departmentsCheckboxes.appendChild(label);
+            });
+        }
+
+        async function saveStaffInfo() {
+             if (!editStaffIdInput || !editStaffNameInput || !editStaffPhoneInput || !saveEditBtn) return; 
+            const id = editStaffIdInput.value;
+            const name = editStaffNameInput.value.trim();
+            const phone = editStaffPhoneInput.value.trim();
+            
+            if (!id || !name) { showMessage("Invalid Name", "Name cannot be empty."); return; }
+            if (!phone || phone.length !== 10 || !/^\d+$/.test(phone)) { showMessage("Invalid Phone", "Phone number must be 10 digits."); return; }
+
+            const company = getSelectOtherValue(editStaffCompanySelect, editStaffCompanyOther);
+            const branch = getSelectOtherValue(editStaffBranchSelect, editStaffBranchOther);
+            const dept = getSelectOtherValue(editStaffDeptSelect, editStaffDeptOther);
+
+            saveEditBtn.disabled = true; saveEditBtn.textContent = "Saving...";
+            try { 
+                await updateDoc(doc(db, staffCollectionPath, id), { 
+                    name, 
+                    phone,
+                    company,
+                    branch, 
+                    dept 
+                }); 
+                closeEditModal(); 
+            }
+            catch (error) { console.error("Save staff error:", error); showMessage("Error", "Failed to save info."); }
+            finally { if (saveEditBtn) { saveEditBtn.disabled = false; saveEditBtn.textContent = "Save"; } }
+        }
+        async function addNewStaff() {
+             if (!newStaffNameInput || !newStaffPhoneInput || !addStaffBtn) return; 
+            const name = newStaffNameInput.value.trim();
+            const phone = newStaffPhoneInput.value.trim();
+            
+            if (!name) { showMessage("Invalid Name", "Please enter a name."); return; }
+            if (!phone || phone.length !== 10 || !/^\d+$/.test(phone)) { showMessage("Invalid Phone", "Phone number must be 10 digits."); return; }
+            
+            const company = getSelectOtherValue(newStaffCompanySelect, newStaffCompanyOther);
+            const branch = getSelectOtherValue(newStaffBranchSelect, newStaffBranchOther);
+            const dept = getSelectOtherValue(newStaffDeptSelect, newStaffDeptOther);
+
+            addStaffBtn.disabled = true; addStaffBtn.textContent = "Adding...";
+            try {
+                // Check if phone number already exists
+                const q = query(collection(db, staffCollectionPath), where("phone", "==", phone));
+                const phoneSnapshot = await getDocs(q);
+                if (!phoneSnapshot.empty) {
+                    throw new Error(`Phone number ${phone} is already registered.`);
+                }
+                
+                let maxId = 0; Object.values(staffDataCache).forEach(s => { const num = parseInt(s.id?.split('_')[1] || 0); if (!isNaN(num) && num > maxId) maxId = num; });
+                const newId = `staff_${maxId + 1}`;
+                
+                await setDoc(doc(db, staffCollectionPath, newId), { 
+                    originalId: newId, 
+                    name, 
+                    phone,
+                    company,
+                    branch, 
+                    dept, 
+                    isTracking: false, 
+                    battery: null, 
+                    live_location: {}, 
+                    status: "Offline" 
+                });
+
+                // persist new options to master lists (arrayUnion prevents duplicates)
+                const listsRef = doc(db, 'settings', 'masterLists');
+                if (company) await setDoc(listsRef, { companies: arrayUnion(company) }, { merge: true });
+                if (branch) await setDoc(listsRef, { branches: arrayUnion(branch) }, { merge: true });
+                if (dept) await setDoc(listsRef, { departments: arrayUnion(dept) }, { merge: true });
+                // immediate local update for current session
+                addToLocalMasterLists(company, branch, dept);
+                refreshCompanyBranchDeptSelects();
+
+                closeAddStaffModal();
+            } catch (error) { console.error("Add staff error:", error); showMessage("Error", `Could not add staff: ${error.message}`); }
+            finally { if (addStaffBtn) { addStaffBtn.disabled = false; addStaffBtn.textContent = "Add Staff"; } }
+        }
+
+        async function saveNewAdmin() {
+            if (!(isSuperAdmin || adminPermissions?.canManageAdmins)) { 
+                showMessage("Forbidden", "You don't have permission to manage admins."); 
+                return; 
+            }
+            if (!newAdminNameInput || !newAdminEmailInput || !newAdminPasswordInput || !addAdminBtn) return;
+            
+            const name = (newAdminNameInput.value || '').trim();
+            const email = (newAdminEmailInput.value || '').trim().toLowerCase();
+            const password = (newAdminPasswordInput.value || '').trim();
+            const role = newAdminRoleSelect?.value || 'admin';
+            
+            if (!name) { showMessage("Invalid Name", "Please enter admin name."); return; }
+            if (!email || !email.includes('@')) { showMessage("Invalid Email", "Please enter a valid email."); return; }
+            if (!password || password.length < 6) { showMessage("Invalid Password", "Password must be at least 6 characters."); return; }
+            
+            // Get selected departments for admin role
+            let departments = [];
+            if (role === 'admin') {
+                const deptCheckboxes = departmentsCheckboxes?.querySelectorAll('input:checked');
+                departments = deptCheckboxes ? Array.from(deptCheckboxes).map(cb => cb.value) : [];
+                if (departments.length === 0) {
+                    showMessage("No Departments", "Select at least one department for this admin.");
+                    return;
+                }
+            }
+            
+            const permissions = {
+                canAddStaff: !!permAddStaff?.checked,
+                canDeleteStaff: !!permDeleteStaff?.checked,
+                canEditStaff: !!permEditStaff?.checked,
+                canManageGeofence: !!permManageGeofence?.checked,
+                canManageAdmins: !!permManageAdmins?.checked,
+            };
+
+            addAdminBtn.disabled = true;
+            addAdminBtn.textContent = "Adding...";
+            
+            try {
+                // Generate unique ID based on email
+                const adminId = email.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                
+                // Check if admin already exists
+                const existingSnap = await getDoc(doc(db, 'admins', adminId));
+                if (existingSnap.exists()) {
+                    showMessage("Error", "An admin with this email already exists.");
+                    addAdminBtn.disabled = false;
+                    addAdminBtn.textContent = "Add Admin";
+                    return;
+                }
+                
+                // Create admin record in Firestore with auth credentials
+                await setDoc(doc(db, 'admins', adminId), {
+                    name,
+                    email,
+                    password, // Store password in Firestore (will be used by Cloud Function or custom auth)
+                    role,
+                    departments,
+                    permissions,
+                    createdBy: auth?.currentUser?.uid || null,
+                    createdAt: Timestamp.now()
+                });
+                
+                showMessage("Success", `Admin "${name}" created successfully!\n\nThey can now login with:\nEmail: ${email}\nPassword: ${password}`);
+                closeAddAdminModal();
+            } catch (error) {
+                console.error("Add admin error:", error);
+                showMessage("Error", `Could not add admin: ${error.message}`);
+            } finally {
+                addAdminBtn.disabled = false;
+                addAdminBtn.textContent = "Add Admin";
+            }
+        }
+
+
+        // --- Admin Management Functions ---
+        
+        // Store all admins data for filtering
+        let allAdminsData = [];
+        let currentAdminFilter = 'all';
+        
+        async function openManageAdminsModal() {
+            if (!manageAdminsModal || !adminsList) return;
+            
+            adminsList.innerHTML = '<p class="text-gray-400">Loading admins...</p>';
+            manageAdminsModal.classList.remove('hidden');
+            
+            try {
+                const snap = await getDocs(collection(db, 'admins'));
+                allAdminsData = [];
+                
+                if (snap.empty) {
+                    adminsList.innerHTML = '<p class="text-gray-400">No admins found.</p>';
+                    return;
+                }
+                
+                snap.forEach((doc) => {
+                    allAdminsData.push({ id: doc.id, data: doc.data() });
+                });
+                
+                // Reset filter and search
+                currentAdminFilter = 'all';
+                const searchInput = document.getElementById('admin-search-input');
+                if (searchInput) searchInput.value = '';
+                updateAdminFilterButtons();
+                renderAdminsList();
+                
+            } catch (error) {
+                console.error('Error loading admins:', error);
+                adminsList.innerHTML = '<p class="text-red-400">Error loading admins.</p>';
+            }
+        }
+        
+        function renderAdminsList(searchQuery = '') {
+            if (!adminsList) return;
+            
+            adminsList.innerHTML = '';
+            const query = searchQuery.toLowerCase().trim();
+            
+            const filtered = allAdminsData.filter(({ id, data }) => {
+                // Apply role filter
+                if (currentAdminFilter !== 'all' && data.role !== currentAdminFilter) {
+                    return false;
+                }
+                
+                // Apply search query
+                if (query) {
+                    const name = (data.name || '').toLowerCase();
+                    const email = (data.email || '').toLowerCase();
+                    const role = data.role === 'master' ? 'super admin' : 'admin';
+                    const depts = (data.departments || []).join(' ').toLowerCase();
+                    
+                    return name.includes(query) || email.includes(query) || role.includes(query) || depts.includes(query);
+                }
+                
+                return true;
+            });
+            
+            if (filtered.length === 0) {
+                adminsList.innerHTML = '<p class="text-gray-400">No admins found matching your criteria.</p>';
+                return;
+            }
+            
+            filtered.forEach(({ id, data }) => {
+                const admin = data;
+                const currentAdminId = sessionStorage.getItem('adminId');
+                const isCurrentUser = id === currentAdminId;
+                const isProtected = id === PROTECTED_SUPER_ADMIN_ID;
+                
+                const div = document.createElement('div');
+                div.className = 'bg-gray-700 p-4 rounded-lg admin-item';
+                div.innerHTML = `
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <h3 class="font-bold text-white">${escapeHTML(admin.name || 'Unnamed')}</h3>
+                            <p class="text-sm text-gray-300">${escapeHTML(admin.email)}</p>
+                            <p class="text-xs text-gray-400">Role: <span class="text-blue-300">${admin.role === 'master' ? 'Super Admin' : 'Admin'}</span> ${isProtected ? '<span class="ml-2 text-yellow-400">(Protected)</span>' : ''}</p>
+                            ${admin.departments && admin.departments.length > 0 ? `<p class="text-xs text-gray-400">Departments: ${escapeHTML(admin.departments.join(', '))}</p>` : ''}
+                        </div>
+                        <div class="space-x-2">
+                            ${(!isCurrentUser && !isProtected) ? `
+                                <button class="edit-admin-list-btn px-3 py-1 bg-blue-600 text-xs rounded hover:bg-blue-700" data-id="${escapeAttr(id)}">Edit</button>
+                            ` : (!isProtected ? '<span class="text-xs text-gray-400">(You)</span>' : '<span class="text-xs text-gray-400">Locked</span>')}
+                        </div>
+                    </div>
+                `;
+                adminsList.appendChild(div);
+            });
+            
+            // Add event listeners to edit buttons
+            adminsList.querySelectorAll('.edit-admin-list-btn').forEach(btn => {
+                btn.addEventListener('click', () => openEditAdminModal(btn.dataset.id));
+            });
+        }
+        
+        function updateAdminFilterButtons() {
+            document.querySelectorAll('.admin-filter-btn').forEach(btn => {
+                const filter = btn.dataset.filter;
+                if (filter === currentAdminFilter) {
+                    btn.classList.remove('bg-gray-600', 'hover:bg-gray-500');
+                    btn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+                } else {
+                    btn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+                    btn.classList.add('bg-gray-600', 'hover:bg-gray-500');
+                }
+            });
+        }
+
+        function closeManageAdminsModal() {
+            if (manageAdminsModal) manageAdminsModal.classList.add('hidden');
+        }
+
+        async function openEditAdminModal(adminId) {
+            if (!editAdminModal || !editAdminId) return;
+            if (adminId === PROTECTED_SUPER_ADMIN_ID) { showMessage('Protected', 'This Super Admin is locked and cannot be edited.'); return; }
+            
+            try {
+                const snap = await getDoc(doc(db, 'admins', adminId));
+                if (!snap.exists()) {
+                    showMessage('Error', 'Admin not found.');
+                    return;
+                }
+                
+                const admin = snap.data();
+                editAdminId.value = adminId;
+                if (editAdminName) editAdminName.value = admin.name || '';
+                if (editAdminEmail) {
+                    editAdminEmail.value = admin.email || '';
+                    // Only allow super admin to edit email
+                    editAdminEmail.disabled = !isSuperAdmin;
+                }
+                if (editAdminRole) editAdminRole.value = admin.role === 'master' ? 'Super Admin' : 'Admin';
+                
+                // Reset password fields
+                const newPasswordInput = document.getElementById('edit-admin-new-password');
+                const confirmPasswordInput = document.getElementById('edit-admin-confirm-password');
+                const passwordResetSection = document.getElementById('password-reset-section');
+                if (newPasswordInput) newPasswordInput.value = '';
+                if (confirmPasswordInput) confirmPasswordInput.value = '';
+                if (passwordResetSection) passwordResetSection.classList.add('hidden');
+                
+                // Populate departments from master list
+                if (editDepartmentsCheckboxes) {
+                    editDepartmentsCheckboxes.innerHTML = '';
+                    [...MASTER_DEPARTMENTS].sort().forEach(dept => {
+                        const isChecked = (admin.departments || []).includes(dept);
+                        const label = document.createElement('label');
+                        label.className = 'flex items-center space-x-2 text-gray-200 cursor-pointer';
+                        label.innerHTML = `
+                            <input type=\"checkbox\" value=\"${escapeAttr(dept)}\" class=\"edit-department-checkbox h-4 w-4\" ${isChecked ? 'checked' : ''}>
+                            <span>${escapeHTML(dept)}</span>
+                        `;
+                        editDepartmentsCheckboxes.appendChild(label);
+                    });
+                }
+                
+                // Set permissions
+                if (admin.permissions) {
+                    const perm = admin.permissions;
+                    if (document.getElementById('edit-perm-add-staff')) document.getElementById('edit-perm-add-staff').checked = !!perm.canAddStaff;
+                    if (document.getElementById('edit-perm-delete-staff')) document.getElementById('edit-perm-delete-staff').checked = !!perm.canDeleteStaff;
+                    if (document.getElementById('edit-perm-edit-staff')) document.getElementById('edit-perm-edit-staff').checked = !!perm.canEditStaff;
+                    if (document.getElementById('edit-perm-manage-geofence')) document.getElementById('edit-perm-manage-geofence').checked = !!perm.canManageGeofence;
+                    if (document.getElementById('edit-perm-manage-admins')) document.getElementById('edit-perm-manage-admins').checked = !!perm.canManageAdmins;
+                }
+                
+                editAdminModal.classList.remove('hidden');
+                closeManageAdminsModal();
+                
+            } catch (error) {
+                console.error('Error loading admin:', error);
+                showMessage('Error', 'Could not load admin details.');
+            }
+        }
+
+        function closeEditAdminModal() {
+            if (editAdminModal) editAdminModal.classList.add('hidden');
+        }
+
+        async function saveEditAdmin() {
+            const adminId = editAdminId?.value;
+            if (!adminId) return;
+            if (adminId === PROTECTED_SUPER_ADMIN_ID) { showMessage('Protected', 'This Super Admin is locked and cannot be edited.'); return; }
+            
+            if (!(isSuperAdmin || adminPermissions?.canManageAdmins)) {
+                showMessage('Forbidden', 'You do not have permission to manage admins.');
+                return;
+            }
+            
+            try {
+                const name = editAdminName?.value.trim() || '';
+                if (!name) { showMessage('Error', 'Name cannot be empty.'); return; }
+                
+                const newEmail = editAdminEmail?.value.trim().toLowerCase() || '';
+                if (!newEmail || !newEmail.includes('@')) {
+                    showMessage('Error', 'Valid email is required.');
+                    return;
+                }
+                
+                // Get current admin data to check role
+                const currentSnap = await getDoc(doc(db, 'admins', adminId));
+                const currentAdmin = currentSnap.data();
+                const oldEmail = currentAdmin.email;
+                
+                const departments = currentAdmin?.role === 'admin' 
+                    ? Array.from(editDepartmentsCheckboxes?.querySelectorAll('input:checked') || []).map(cb => cb.value)
+                    : [];
+                
+                const permissions = {
+                    canAddStaff: !!document.getElementById('edit-perm-add-staff')?.checked,
+                    canDeleteStaff: !!document.getElementById('edit-perm-delete-staff')?.checked,
+                    canEditStaff: !!document.getElementById('edit-perm-edit-staff')?.checked,
+                    canManageGeofence: !!document.getElementById('edit-perm-manage-geofence')?.checked,
+                    canManageAdmins: !!document.getElementById('edit-perm-manage-admins')?.checked,
+                };
+                
+                // Check password reset
+                const newPassword = document.getElementById('edit-admin-new-password')?.value.trim();
+                const confirmPassword = document.getElementById('edit-admin-confirm-password')?.value.trim();
+                
+                if (newPassword || confirmPassword) {
+                    if (newPassword !== confirmPassword) {
+                        showMessage('Error', 'Passwords do not match.');
+                        return;
+                    }
+                    if (newPassword.length < 6) {
+                        showMessage('Error', 'Password must be at least 6 characters.');
+                        return;
+                    }
+                }
+                
+                saveEditAdminBtn.disabled = true;
+                saveEditAdminBtn.textContent = 'Saving...';
+                
+                // Prepare update data
+                const updateData = {
+                    name,
+                    email: newEmail,
+                    departments,
+                    permissions
+                };
+                
+                // Add password to update if changed
+                if (newPassword) {
+                    updateData.password = newPassword;
+                }
+                
+                // If email changed, handle document ID change
+                if (oldEmail !== newEmail) {
+                    const newAdminId = newEmail.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                    
+                    // Check if new email already exists
+                    const existingSnap = await getDoc(doc(db, 'admins', newAdminId));
+                    if (existingSnap.exists() && newAdminId !== adminId) {
+                        showMessage('Error', 'An admin with this email already exists.');
+                        saveEditAdminBtn.disabled = false;
+                        saveEditAdminBtn.textContent = 'Save Changes';
+                        return;
+                    }
+                    
+                    if (newAdminId !== adminId) {
+                        // Create new document with updated email
+                        await setDoc(doc(db, 'admins', newAdminId), {
+                            ...currentAdmin,
+                            ...updateData
+                        });
+                        
+                        // Delete old document
+                        await deleteDoc(doc(db, 'admins', adminId));
+                        
+                        showMessage('Success', `Admin updated. New login email: ${newEmail}${newPassword ? '\nPassword has been reset.' : ''}`);
+                    } else {
+                        await updateDoc(doc(db, 'admins', adminId), updateData);
+                        showMessage('Success', `Admin updated.${newPassword ? ' Password has been reset.' : ''}`);
+                    }
+                } else {
+                    await updateDoc(doc(db, 'admins', adminId), updateData);
+                    showMessage('Success', `Admin updated.${newPassword ? ' Password has been reset.' : ''}`);
+                }
+                
+                closeEditAdminModal();
+                openManageAdminsModal();
+                
+            } catch (error) {
+                console.error('Save admin error:', error);
+                showMessage('Error', 'Could not save admin.');
+            } finally {
+                saveEditAdminBtn.disabled = false;
+                saveEditAdminBtn.textContent = 'Save Changes';
+            }
+        }
+
+        // --- UI Rendering & Updates (Modified for Filtering) ---
+        function renderUI() {
+             if (!staffListEl) return;
+            staffListEl.innerHTML = ''; 
+
+            const filteredStaffResult = applyCurrentFilters();
+            const filteredStaff = Array.isArray(filteredStaffResult) ? filteredStaffResult : []; 
+
+            const sortedStaff = filteredStaff.sort((a, b) => {
+                if (!a || !a.data) return 1; 
+                if (!b || !b.data) return -1; 
+                const dataA = a.data, dataB = b.data;
+                if (dataA.isTracking && !dataB.isTracking) return -1;
+                if (!dataA.isTracking && dataB.isTracking) return 1;
+                return (dataA.name || '').localeCompare(dataB.name || '');
+            });
+
+            if (sortedStaff.length === 0) {
+                 if (loadingStaffEl) {
+                     loadingStaffEl.style.display = 'block';
+                     loadingStaffEl.textContent = "No staff match the current filters.";
+                 }
+                 if (Object.keys(staffDataCache).length === 0 && loadingStaffEl) {
+                      loadingStaffEl.textContent = "No staff found. Add new staff.";
+                 }
+            } else {
+                if (loadingStaffEl) loadingStaffEl.style.display = 'none';
+                sortedStaff.forEach(staff => {
+                    if (staff && staff.id && staff.data) updateStaffCard(staff.id, staff.data);
+                });
+            }
+
+            // Update map markers based on filter
+            Object.values(staffDataCache).forEach(staff => {
+                 if (!staff || !staff.data) return;
+                const isVisible = sortedStaff.some(s => s.id === staff.id);
+                updateMapMarker(staff.id, staff.data, isVisible);
+                const problemState = checkGeofenceAlerts(staff.id, staff.data, true) || { isProblem: false }; 
+                flashStaffCard(staff.id, isVisible && problemState.isProblem); 
+            });
+            
+            updateFilterIconState(); 
+        }
+
+        /**
+         * getCardStatus
+         * Determines connectivity status (Online / No Signal / Offline) based on heartbeat
+         */
+        function getCardStatus(data) {
+            const lastSeenMillis = data.live_location?.timestamp?.toMillis?.() || 0;
+            const now = Date.now();
+
+            if (data.isTracking) {
+                if (!lastSeenMillis || (now - lastSeenMillis) > HEARTBEAT_THRESHOLD_MS) {
+                    return { text: "No Signal", color: "border-orange-500", raw: "no-signal", lastSeenMillis };
+                }
+                return { text: "Online", color: "border-green-500", raw: "online", lastSeenMillis };
+            } else if (lastSeenMillis) {
+                return { text: "Offline", color: "border-yellow-500", raw: "offline", lastSeenMillis };
+            }
+            return { text: "Offline", color: "border-gray-500", raw: "offline", lastSeenMillis: 0 };
+        }
+
+        function updateStaffCard(id, data) { 
+             if (!staffListEl || !data || !id) return; 
+            let card = document.getElementById(`staff-card-${id}`); if (!card) { card = document.createElement('div'); card.id = `staff-card-${id}`; card.className = "staff-card-clickable bg-gray-800 p-4 rounded-lg shadow-md border-l-4"; card.dataset.id = id; }
+            staffListEl.appendChild(card);
+
+            // Determine connectivity status (border + text)
+            const cardStatus = getCardStatus(data);
+            let sCol = cardStatus.color;
+
+            let bTxt = "N/A", bCol = "text-gray-400";
+            if (data.battery != null) { 
+                bTxt = `${data.battery}%`;
+                if (data.battery > 50) bCol = "text-green-400"; 
+                else if (data.battery > 20) bCol = "text-yellow-400"; 
+                else bCol = "text-red-400"; 
+            }
+            
+            const dept = data.dept || 'Unassigned';
+            const branch = data.branch || 'Unassigned';
+            const name = data.name || 'Unnamed Staff'; 
+            const phone = data.phone || ''; 
+            const company = data.company || 'N/A';
+            const safeId = id || ''; 
+
+            // Use cached address if available; otherwise show button
+            const address = locationCache[id];
+            const locTxt = address 
+                ? `Location: <span class=\"text-blue-300\">${escapeHTML(address)}</span>`
+                : `Location: <button class=\"find-location-btn\" data-id=\"${escapeAttr(safeId)}\">(Find area)</button>`;
+
+            // Status text + color for card body
+            const statusText = cardStatus.text;
+            let statusTextColor = 'text-gray-400';
+            if (cardStatus.raw === 'online') statusTextColor = 'text-green-400';
+            else if (cardStatus.raw === 'no-signal') statusTextColor = 'text-orange-400';
+
+            const lastSeenLabel = cardStatus.lastSeenMillis
+                ? ` · Last seen ${new Date(cardStatus.lastSeenMillis).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
+                : '';
+            
+            card.innerHTML = `<div class=\"flex justify-between items-start mb-2\"><div><h3 class=\"text-xl font-bold\">${escapeHTML(name)} <span class=\"text-base text-gray-400\">(${escapeHTML(dept)})</span></h3><p class=\"text-sm text-gray-400\">Company: ${escapeHTML(company)}</p><p class=\"text-sm text-gray-400\">Branch: ${escapeHTML(branch)}</p></div><div class=\"flex items-center space-x-2 shrink-0\"><span class=\"text-sm ${bCol}\">${bTxt}</span></div></div><p id=\"location-text-${id}\" class=\"location-text mb-1\">${locTxt}</p><p class=\"text-xs text-gray-300 mb-1\">Status: <span class=\"${statusTextColor}\">${statusText}</span>${lastSeenLabel}</p><p class=\"text-xs text-gray-300 mb-2\">Active Today: <span id=\"daily-active-${id}\">--</span></p><div class=\"grid grid-cols-3 gap-2\"><button class=\"view-day-report-btn w-full px-3 py-1.5 bg-cyan-600 text-xs rounded hover:bg-cyan-700\" data-id=\"${escapeAttr(safeId)}\">Day Report</button><button class=\"view-history-btn w-full px-3 py-1.5 bg-blue-600 text-xs rounded hover:bg-blue-700\" data-id=\"${escapeAttr(safeId)}\">History</button><button class=\"edit-name-btn w-full px-3 py-1.5 bg-gray-600 text-xs rounded hover:bg-gray-700\" data-id=\"${escapeAttr(safeId)}\" data-name=\"${escapeAttr(name)}\" data-phone=\"${escapeAttr(phone)}\" data-company=\"${escapeAttr(company)}\" data-branch=\"${escapeAttr(branch)}\" data-dept=\"${escapeAttr(dept)}\">Edit Info</button></div>`;
+            card.classList.remove("border-gray-500", "border-green-500", "border-yellow-500", "border-orange-500"); 
+            card.classList.add(sCol);
+
+            // Asynchronously compute today's active hours and fill the span
+            updateTodayActiveStats(id);
+         }
+         
+        function updateMapMarker(id, data, visible) { 
+             if (!map || !data) return; 
+            const { lat, lng, timestamp } = data.live_location || {}; 
+            const marker = staffMarkers[id];
+            const latLng = (lat != null && lng != null) ? [lat, lng] : null;
+            const name = data.name || 'Unnamed Staff'; 
+            if (!visible) { if (marker) map.removeLayer(marker); delete staffMarkers[id]; return; }
+
+            // Determine live vs offline based on heartbeat
+            const lastSeen = typeof timestamp?.toMillis === 'function' ? timestamp.toMillis() : (timestamp ? new Date(timestamp).getTime() : 0);
+            const now = Date.now();
+            const isLive = data.isTracking && latLng && (now - lastSeen) <= HEARTBEAT_THRESHOLD_MS;
+
+            if (latLng) { 
+                const label = `${escapeHTML(name)}`; // name only
+                const labelOpts = { permanent: true, direction: 'top', offset: getLabelOffsetForId(id), className: 'staff-marker-label' };
+                if (marker) { 
+                    marker.setLatLng(latLng).setIcon(isLive ? blueIcon : greyIcon);
+                    // rebind to apply offset consistently
+                    marker.unbindTooltip();
+                    marker.bindTooltip(label, labelOpts);
+                } else {
+                    staffMarkers[id] = L.marker(latLng, { icon: isLive ? blueIcon : greyIcon })
+                        .addTo(map)
+                        .bindTooltip(label, labelOpts); 
+                }
+            } else {
+                if (marker) map.removeLayer(marker); 
+                delete staffMarkers[id]; 
+            }
+
+            // Add click event to the marker if it exists
+            if (staffMarkers[id]) {
+                staffMarkers[id].off('click').on('click', () => {
+                    scrollToCard(id);
+                });
+            }
+         }
+         
+        function flashStaffCard(id, flash) { 
+            const card = document.getElementById(`staff-card-${id}`); 
+            if (card) card.classList.toggle('geofence-alert', !!flash); 
+        }
+
+        // Utility: reduce an array of timestamped points to at most one per N minutes (keeps earliest in bucket)
+        function samplePointsByMinutes(points, minutes){
+            const bucketMs = (minutes || 15) * 60 * 1000;
+            const seen = new Set();
+            const out = [];
+            for (const p of points){
+                const ts = typeof p.timestamp?.toMillis === 'function' ? p.timestamp.toMillis() : (p.timestamp?.seconds ? p.timestamp.seconds*1000 : 0);
+                if (!ts) continue;
+                const b = Math.floor(ts / bucketMs);
+                if (seen.has(b)) continue;
+                seen.add(b);
+                out.push(p);
+            }
+            return out;
+        }
+
+        // --- History & Geofence Logic ---
+        async function fetchAndShowHistory(id, date) { 
+            if (!map || !id || !date) return; 
+            if (currentHistoryPath) { map.removeLayer(currentHistoryPath); currentHistoryPath = null; }
+            updateClearPathBtnVisibility();
+            
+            try { 
+                const startOfDay = new Date(date); startOfDay.setHours(0, 0, 0, 0);
+                const endOfDay = new Date(date); endOfDay.setHours(23, 59, 59, 999);
+                
+                const startTimestamp = Timestamp.fromDate(startOfDay);
+                const endTimestamp = Timestamp.fromDate(endOfDay);
+                
+                const ref = collection(db, staffCollectionPath, id, "history");
+                const q = query(ref, where("timestamp", ">=", startTimestamp), where("timestamp", "<=", endTimestamp)); 
+                
+                const snap = await getDocs(q); 
+                if (snap.empty) { showMessage("No History", "No history found for this date."); return; }
+                
+                const points = snap.docs
+                    .map(d => d.data())
+                    .filter(d => d.location?.latitude != null && d.location?.longitude != null)
+                    .sort((a, b) => a.timestamp.seconds - b.timestamp.seconds); // Sort by time
+
+                if (points.length === 0) { showMessage("Not Enough Data", "No valid history points for this date."); return; }
+                
+                // Keep at most one point per 15 minutes for path consistency with report
+                const points15 = samplePointsByMinutes(points, HISTORY_BUCKET_MINUTES);
+                
+                const pathGroup = new L.featureGroup(); // Create a group
+                pathGroup.staffId = id; // Tag the group with the staff ID
+                
+                // 1. Add clickable circle markers for each sampled point
+                points15.forEach(point => {
+                    const latLng = [point.location.latitude, point.location.longitude];
+                    const timeString = point.timestamp.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                    
+                    L.circleMarker(latLng, {
+                        radius: 5,
+                        color: 'red',
+                        weight: 2,
+                        fillColor: 'red',
+                        fillOpacity: 0.7
+                    })
+                    .bindPopup(timeString)
+                    .addTo(pathGroup);
+                });
+
+                // 2. Add the polyline
+                if (points15.length > 1) {
+                    const latLngs = points15.map(p => [p.location.latitude, p.location.longitude]);
+                    L.polyline(latLngs, { color: 'red', weight: 3 }).addTo(pathGroup);
+                }
+
+                pathGroup.addTo(map);
+                map.fitBounds(pathGroup.getBounds().pad(0.1), { maxZoom: 18 }); 
+                currentHistoryPath = pathGroup; // Store the group
+                updateClearPathBtnVisibility();
+             } catch (error) { console.error("History path error:", error); showMessage("Error", "Could not load history path."); }
+        }
+
+        // --- Clear/Hide History Path Control ---
+        function clearHistoryPath(){
+            if (map && currentHistoryPath){
+                map.removeLayer(currentHistoryPath);
+                currentHistoryPath = null;
+            }
+            updateClearPathBtnVisibility();
+        }
+        function updateClearPathBtnVisibility(){
+            if (!clearPathBtn) return;
+            clearPathBtn.classList.toggle('hidden', !currentHistoryPath);
+        }
+        if (clearPathBtn) clearPathBtn.addEventListener('click', clearHistoryPath);
+        document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') clearHistoryPath(); });
+
+        async function updateTodayActiveStats(id) {
+            const activeEl = document.getElementById(`daily-active-${id}`);
+            if (!activeEl || !db) return;
+
+            const todayStr = new Date().toISOString().split('T')[0];
+            const cache = todayActiveStatsCache[id];
+            if (cache && cache.date === todayStr) {
+                activeEl.textContent = cache.text;
+                return;
+            }
+
+            try {
+                const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+                const endOfDay = new Date(); endOfDay.setHours(23, 59, 59, 999);
+                const startTimestamp = Timestamp.fromDate(startOfDay);
+                const endTimestamp = Timestamp.fromDate(endOfDay);
+
+                const ref = collection(db, staffCollectionPath, id, "history");
+                const q = query(ref, where("timestamp", ">=", startTimestamp), where("timestamp", "<=", endTimestamp));
+                const snap = await getDocs(q);
+
+                if (snap.empty) {
+                    const text = '0h 0m';
+                    activeEl.textContent = text;
+                    todayActiveStatsCache[id] = { date: todayStr, activeMs: 0, text };
+                    return;
+                }
+
+                const points = snap.docs
+                    .map(d => d.data())
+                    .filter(d => d.timestamp)
+                    .sort((a, b) => a.timestamp.seconds - b.timestamp.seconds);
+
+                if (points.length === 0) {
+                    const text = '0h 0m';
+                    activeEl.textContent = text;
+                    todayActiveStatsCache[id] = { date: todayStr, activeMs: 0, text };
+                    return;
+                }
+
+                const firstMs = points[0].timestamp.toMillis();
+                const lastMs = points[points.length - 1].timestamp.toMillis();
+                const activeMs = Math.max(0, lastMs - firstMs);
+                const hours = Math.floor(activeMs / (1000 * 60 * 60));
+                const mins = Math.round((activeMs % (1000 * 60 * 60)) / (1000 * 60));
+                const text = `${hours}h ${mins}m`;
+
+                activeEl.textContent = text;
+                todayActiveStatsCache[id] = { date: todayStr, activeMs, text };
+            } catch (error) {
+                console.error('Active hours error:', error);
+                activeEl.textContent = '--';
+            }
+        }
+
+        /**
+         * NEW: Day Report Generator
+         */
+        async function fetchAndShowDayReport(id) {
+            if (!id || !dayReportModal) return;
+
+            const staff = staffDataCache[id];
+            if (!staff) return;
+
+            // 1. Setup Modal UI
+            reportStaffNameEl.textContent = staff.data.name || 'Unnamed';
+            const today = new Date();
+            reportDateEl.textContent = today.toLocaleDateString();
+            dayReportListEl.innerHTML = '<p class="text-gray-400">Loading report...</p>';
+            dayReportModal.classList.remove('hidden');
+
+            // 2. Fetch Today's History
+            try {
+                const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+                const endOfDay = new Date(); endOfDay.setHours(23, 59, 59, 999);
+                const startTimestamp = Timestamp.fromDate(startOfDay);
+                const endTimestamp = Timestamp.fromDate(endOfDay);
+                
+                const ref = collection(db, staffCollectionPath, id, "history");
+                const q = query(ref, where("timestamp", ">=", startTimestamp), where("timestamp", "<=", endTimestamp)); 
+                
+                const snap = await getDocs(q);
+                if (snap.empty) {
+                    dayReportListEl.innerHTML = '<p class="text-gray-400">No history found for today.</p>';
+                    return;
+                }
+
+                const points = snap.docs
+                    .map(d => d.data())
+                    .filter(d => d.timestamp)
+                    .sort((a, b) => a.timestamp.seconds - b.timestamp.seconds); // Sort by time
+
+                if (points.length === 0) {
+                    dayReportListEl.innerHTML = '<p class="text-gray-400">No valid points for today.</p>';
+                    return;
+                }
+
+                // Keep at most one point per 15 minutes
+                const points15 = samplePointsByMinutes(points, HISTORY_BUCKET_MINUTES);
+
+                // 3. Generate Report HTML
+                let reportHTML = '';
+                let lastTimestamp = null;
+                const timeFmt = (ts) => ts.toDate().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+                points15.forEach(point => {
+                    const currentTimestamp = point.timestamp.toMillis();
+                    const timeString = timeFmt(point.timestamp);
+
+                    // Check for a gap
+                    if (lastTimestamp) {
+                        const diffMins = (currentTimestamp - lastTimestamp) / (1000 * 60);
+                        if (diffMins > GAP_THRESHOLD_MINS) {
+                            reportHTML += `<p class="text-yellow-400 font-bold">--- GAP (${Math.round(diffMins)} mins) ---</p>`;
+                        }
+                    }
+
+                    reportHTML += `<p><span class="text-cyan-400">${timeString}</span>: Location recorded.</p>`;
+                    lastTimestamp = currentTimestamp;
+                });
+
+                dayReportListEl.innerHTML = reportHTML;
+
+            } catch (error) {
+                console.error("Day report error:", error);
+                dayReportListEl.innerHTML = '<p class="text-red-400">Error loading report.</p>';
+            }
+        }
+
+        function checkGeofenceAlerts(id, data, alert) { 
+             const def = { isProblem: false, isInsideAnyAssignedFence: false, isAssignedToAnyFence: false }; 
+             if (!Object.keys(geofencesCache).length || !staffDataCache[id] || !data) return def;
+            if (!data.isTracking || !data.live_location?.lat) { if (staffDataCache[id].geofenceState && Object.keys(staffDataCache[id].geofenceState).length > 0 && alert) staffDataCache[id].geofenceState = {}; return def; }
+            const ll = L.latLng(data.live_location.lat, data.live_location.lng), pS = staffDataCache[id].geofenceState || {}, nS = { ...pS }; let inside = false, assigned = false;
+            for (const fId in geofencesCache) { const f = geofencesCache[fId]; if (!f) continue; const all = (f.assignedStaff||[]).includes("all"), staff = (f.assignedStaff||[]).includes(id); if (!all && !staff) { delete nS[fId]; continue; } assigned = true; if (!f.center?.lat || !f.center?.lng) continue; const fLL = L.latLng(f.center.lat, f.center.lng); const dist = map.distance(ll, fLL), isIn = typeof f.radius ==='number' && dist <= f.radius; if (isIn) { nS[fId] = true; inside = true; if (!pS[fId] && alert) { console.log(`${data.name || id} ENTERED ${f.name || fId}`); showMessage("Geofence Alert", `${escapeHTML(data.name || id)} ENTERED "${escapeHTML(f.name || fId)}".`); } } else { nS[fId] = false; if (pS[fId] && alert) { console.log(`${data.name || id} EXITED ${f.name || fId}`); showMessage("Geofence Alert", `${escapeHTML(data.name || id)} EXITED "${escapeHTML(f.name || fId)}".`); } } }
+            staffDataCache[id].geofenceState = nS; return { isProblem: assigned && !inside, isInsideAnyAssignedFence: inside, isAssignedToAnyFence: assigned };
+        }
+
+        // --- Search Logic ---
+        function handleSearch() { 
+             if (!searchInput || !searchResultsEl) return; 
+            const searchTerm = searchInput.value.trim().toLowerCase();
+            searchResultsEl.innerHTML = '';
+            if (searchTerm.length < 1) {
+                searchResultsEl.classList.add('hidden');
+                return;
+            }
+            const results = Object.values(staffDataCache).filter(staff => {
+                 if (!staff || !staff.data) return false; 
+                const name = (staff.data.name || '').toLowerCase();
+                const branch = (staff.data.branch || '').toLowerCase();
+                const dept = (staff.data.dept || '').toLowerCase();
+                const phone = (staff.data.phone || '').toLowerCase(); 
+                const company = (staff.data.company || '').toLowerCase(); 
+                return name.includes(searchTerm) || branch.includes(searchTerm) || dept.includes(searchTerm) || phone.includes(searchTerm) || company.includes(searchTerm);
+            }).slice(0, 10); 
+
+            if (results.length > 0) {
+                results.forEach(staff => {
+                     if (!staff || !staff.id || !staff.data) return; 
+                    const div = document.createElement('div');
+                    div.dataset.id = staff.id;
+                    const name = staff.data.name || 'Unnamed Staff';
+                    const branch = staff.data.branch || 'Unassigned';
+                    const dept = staff.data.dept || 'Unassigned';
+                    div.innerHTML = `
+                        <div>${escapeHTML(name)}</div>
+                        <div class="staff-details">${escapeHTML(branch)} - ${escapeHTML(dept)}</div>
+                    `;
+                    searchResultsEl.appendChild(div);
+                });
+                searchResultsEl.classList.remove('hidden');
+            } else {
+                searchResultsEl.classList.add('hidden');
+            }
+         }
+        
+        // --- Filter Modal Logic ---
+
+        function openFilterModal() {
+             if (!filterModal) return;
+             // Copy current applied filters to temporary state for editing in modal
+             tempFilterState = {
+                 companies: new Set(currentFilterState.companies),
+                 branches: new Set(currentFilterState.branches),
+                 departments: new Set(currentFilterState.departments),
+                 staffIds: new Set(currentFilterState.staffIds),
+                 statuses: new Set(currentFilterState.statuses),
+             };
+             isFilterModalOpen = true; // Set flag
+             populateFilterModal(); // Populate based on temp state
+             filterModal.classList.remove('hidden');
+        }
+
+        function closeFilterModal() {
+             if (filterModal) filterModal.classList.add('hidden');
+             isFilterModalOpen = false; // Unset flag
+        }
+
+        // Populates ALL sections based on CURRENT staffDataCache and reflects tempFilterState
+        function populateFilterModal() {
+             if (!filterCompanyList || !filterBranchList || !filterDeptList || !filterStaffList) return; 
+             
+             // 1. Companies (from master list)
+            populateCheckboxList(filterCompanyList, [...MASTER_COMPANIES], tempFilterState.companies, 'company');
+            
+             // 2. Branches (from master list, disabled if not available)
+             updateBranchOptions();
+
+             // 3. Departments (from master list, disabled based on upstream selections)
+             updateDepartmentOptions();
+
+             // 4. Staff (Available options based on TEMP selected companies/branches/depts)
+             updateStaffOptions(); 
+
+             // 5. Status (static list of connectivity/manual statuses)
+             updateStatusOptions();
+        }
+        
+        // Updates Branch options based on TEMP selected companies
+        function updateBranchOptions() {
+             if (!filterBranchList) return; 
+            const selectedCompanies = tempFilterState.companies; 
+            const allStaff = Object.values(staffDataCache);
+            
+            // What branches are available under current company selections
+            const availableBranches = new Set(
+                 allStaff
+                     .filter(s => selectedCompanies.size === 0 || selectedCompanies.has(s.data?.company || ''))
+                     .map(s => s.data?.branch || '')
+                     .filter(Boolean)
+            );
+            
+             // Create option objects from fixed list
+            const branchOptions = MASTER_BRANCHES.map(branch => ({
+                 value: branch,
+                 text: branch,
+                 disabled: selectedCompanies.size > 0 && !availableBranches.has(branch)
+            }));
+
+            populateCheckboxList(filterBranchList, branchOptions, tempFilterState.branches, 'branch');
+        }
+
+        // Updates Department options based on TEMP selected companies/branches
+        function updateDepartmentOptions() {
+             if (!filterDeptList) return; 
+            const selectedCompanies = tempFilterState.companies; 
+            const selectedBranches = tempFilterState.branches;
+            const allStaff = Object.values(staffDataCache);
+            
+            const availableDepts = new Set(
+                 allStaff
+                     .filter(s => 
+                         (selectedCompanies.size === 0 || selectedCompanies.has(s.data?.company || '')) &&
+                         (selectedBranches.size === 0 || selectedBranches.has(s.data?.branch || ''))
+                     )
+                     .map(s => s.data?.dept || '')
+                     .filter(Boolean)
+            );
+            
+            const deptOptions = MASTER_DEPARTMENTS.map(dept => ({
+                 value: dept,
+                 text: dept,
+                 disabled: (selectedCompanies.size > 0 || selectedBranches.size > 0) && !availableDepts.has(dept)
+            }));
+            
+            populateCheckboxList(filterDeptList, deptOptions, tempFilterState.departments, 'dept');
+        }
+        
+        // Updates Staff options based on TEMP selected companies/branches/departments
+        function updateStaffOptions() {
+             if (!filterStaffList) return; 
+            const selectedCompanies = tempFilterState.companies;
+            const selectedBranches = tempFilterState.branches;
+            const selectedDepts = tempFilterState.departments;
+            const allStaff = Object.values(staffDataCache);
+
+            const allStaffOptions = allStaff.map(s => ({ 
+                value: s.id, 
+                text: s.data?.name || 'Unnamed Staff',
+                company: s.data?.company || 'Unassigned',
+                branch: s.data?.branch || 'Unassigned',
+                dept: s.data?.dept || 'Unassigned'
+            })).sort((a,b) => a.text.localeCompare(b.text));
+
+            const staffOptions = allStaffOptions.map(staff => ({
+                ...staff,
+                disabled: 
+                    (selectedCompanies.size > 0 && !selectedCompanies.has(staff.company)) ||
+                    (selectedBranches.size > 0 && !selectedBranches.has(staff.branch)) ||
+                    (selectedDepts.size > 0 && !selectedDepts.has(staff.dept))
+            }));
+                                               
+            populateCheckboxList(filterStaffList, staffOptions, tempFilterState.staffIds, 'staff');
+        }
+        
+        // Update Status options (reflects TEMP selection)
+        function updateStatusOptions() {
+             if (!filterStatusList) return; 
+             // Re-populate the static list to ensure it's always correct
+             const statusOptions = [
+                { value: 'online', text: 'Online' },
+                { value: 'no-signal', text: 'No Signal' },
+                { value: 'offline', text: 'Offline' },
+             ];
+             populateCheckboxList(filterStatusList, statusOptions, tempFilterState.statuses, 'status');
+             checkSelectAllState('status'); 
+        }
+
+        // Helper to populate a checkbox list section
+        function populateCheckboxList(listElement, options, selectedSet, type) {
+             if (!listElement) return;
+            
+             const selectAllLabel = listElement.querySelector('label:first-child');
+             
+             listElement.innerHTML = ''; // Clear previous options
+             if (selectAllLabel) listElement.appendChild(selectAllLabel);
+
+             if (options.length > 0) {
+                 options.forEach(option => {
+                     const value = typeof option === 'object' ? option.value : option;
+                     const text = typeof option === 'object' ? option.text : option;
+                     const isDisabled = typeof option === 'object' ? option.disabled : false;
+                     
+                     // Check against the provided selectedSet (which is tempFilterState)
+                     const isChecked = !isDisabled && selectedSet.has(value); 
+                     
+                     const label = document.createElement('label');
+                     label.className = isDisabled ? 'disabled' : '';
+                     label.title = isDisabled ? `${text} (Not in current selection)` : text;
+                     
+                     label.innerHTML = `
+                         <input type="checkbox" value="${escapeAttr(value)}" data-type="${type}" 
+                                ${isChecked ? 'checked' : ''} ${isDisabled ? 'disabled' : ''}> 
+                         ${escapeHTML(text)}
+                     `;
+                     listElement.appendChild(label);
+                 });
+             } else {
+                 const p = document.createElement('p');
+                 p.className = 'text-gray-400 text-sm italic initial-message'; // Add class
+                 p.textContent = `No ${type} options available`;
+                 listElement.appendChild(p);
+             }
+             // Update Select All checkbox state for this section
+             checkSelectAllState(type); 
+        }
+        
+        // Reads selected items for a specific filter type FROM THE MODAL's checkboxes
+        function getSelectedFilterItemsFromModal(type) {
+            const listElement = document.getElementById(`filter-${type}-list`);
+            if (!listElement) return new Set();
+            const selected = new Set();
+            // Only add checked and *not* disabled items
+            listElement.querySelectorAll(`input[data-type="${type}"]:checked:not(:disabled):not(.filter-select-all)`).forEach(cb => {
+                selected.add(cb.value);
+            });
+            return selected;
+        }
+
+        // Handles changes in any filter checkbox WITHIN THE MODAL
+        function handleFilterChange(event) {
+            if (!event.target.matches('input[type="checkbox"]')) return;
+
+            const checkbox = event.target;
+            const type = checkbox.dataset.type;
+            const isSelectAll = checkbox.classList.contains('filter-select-all');
+
+            if (isSelectAll) {
+                handleSelectAllToggle(type, checkbox.checked);
+            } else {
+                // Update the TEMP filter state set based on individual checkbox change
+                tempFilterState[getSetKeyByType(type)] = getSelectedFilterItemsFromModal(type); 
+                checkSelectAllState(type); // Update 'Select All' based on individual items
+            }
+            
+            // Trigger cascading updates in the MODAL
+            if (type === 'company') {
+                // Clear downstream TEMP selections when company changes
+                tempFilterState.branches.clear();
+                tempFilterState.departments.clear();
+                tempFilterState.staffIds.clear();
+                updateBranchOptions();
+                updateDepartmentOptions();
+                updateStaffOptions();
+            } else if (type === 'branch') {
+                // Clear downstream TEMP selections when branch changes
+                tempFilterState.departments.clear();
+                tempFilterState.staffIds.clear();
+                updateDepartmentOptions();
+                updateStaffOptions();
+            } else if (type === 'dept') {
+                 // Clear downstream TEMP selections when dept changes
+                tempFilterState.staffIds.clear();
+                updateStaffOptions();
+            }
+         }
+
+        // Handles the "Select All" checkbox toggle WITHIN THE MODAL
+        function handleSelectAllToggle(type, isChecked) {
+            const listElement = document.getElementById(`filter-${type}-list`);
+            if (!listElement) return;
+            // Only toggle checkboxes that are NOT disabled
+            const checkboxes = listElement.querySelectorAll(`input[data-type="${type}"]:not(.filter-select-all):not(:disabled)`);
+            checkboxes.forEach(cb => cb.checked = isChecked);
+            
+            // Update the TEMP filter state set immediately
+            tempFilterState[getSetKeyByType(type)] = getSelectedFilterItemsFromModal(type);
+            
+            // Trigger cascade
+            if (type === 'company') {
+                tempFilterState.branches.clear(); tempFilterState.departments.clear(); tempFilterState.staffIds.clear();
+                updateBranchOptions();
+                updateDepartmentOptions();
+                updateStaffOptions();
+            } else if (type === 'branch') {
+                tempFilterState.departments.clear(); tempFilterState.staffIds.clear();
+                updateDepartmentOptions();
+                updateStaffOptions();
+            } else if (type === 'dept') {
+                 tempFilterState.staffIds.clear();
+                updateStaffOptions();
+            }
+         }
+        
+        // Checks if "Select All" should be checked based on individual items IN THE MODAL
+        function checkSelectAllState(type) {
+            const listElement = document.getElementById(`filter-${type}-list`);
+            if (!listElement) return;
+            const selectAll = listElement.querySelector('.filter-select-all');
+            // Only count items that are NOT disabled
+            const items = listElement.querySelectorAll(`input[data-type="${type}"]:not(.filter-select-all):not(:disabled)`);
+            if (!selectAll) return; 
+
+            if (items.length === 0) {
+                 selectAll.checked = false; // Nothing to select
+                 return;
+            }
+
+            const allChecked = [...items].every(cb => cb.checked);
+            selectAll.checked = allChecked;
+         }
+        
+        // Maps filter type string to the key in tempFilterState/currentFilterState
+        function getSetKeyByType(type) {
+             switch(type) {
+                 case 'company': return 'companies';
+                 case 'branch': return 'branches';
+                 case 'dept': return 'departments';
+                 case 'staff': return 'staffIds';
+                 case 'status': return 'statuses';
+                 default: return null;
+             }
+         }
+
+        // Clears both temp and current filters and updates UI
+        function clearFilters() {
+             // Reset temp state
+             tempFilterState = { companies: new Set(), branches: new Set(), departments: new Set(), staffIds: new Set(), statuses: new Set() };
+             // Reset applied state
+             currentFilterState = { companies: new Set(), branches: new Set(), departments: new Set(), staffIds: new Set(), statuses: new Set() };
+             
+             populateFilterModal(); // Reset checkboxes in the modal (will show all enabled)
+             renderUI(); // Re-render everything with no filters
+             closeFilterModal(); 
+         }
+        
+        // Updates the filter icon based on CURRENT applied filters
+        function updateFilterIconState() {
+             const isActive = currentFilterState.companies.size > 0 ||
+                               currentFilterState.branches.size > 0 ||
+                               currentFilterState.departments.size > 0 ||
+                               currentFilterState.staffIds.size > 0 ||
+                               currentFilterState.statuses.size > 0;
+             if (filterIconBtn) { 
+                 filterIconBtn.classList.toggle('active', isActive);
+             }
+         }
+
+        // --- Modal Functions ---
+        function showMessage(title, text, callback) {
+            if (!messageModal || !messageTitle || !messageText) return;
+            messageTitle.textContent = title;
+            messageText.textContent = text;
+            messageModal.classList.remove('hidden');
+            if (messageCancelBtn) messageCancelBtn.classList.add('hidden');
+            
+            const handleOk = () => {
+                closeMessageModal();
+                if (callback) callback();
+            };
+            
+            if (messageOkBtn) {
+                messageOkBtn.replaceWith(messageOkBtn.cloneNode(true));
+                messageOkBtn = document.getElementById('message-ok-btn');
+                messageOkBtn.addEventListener('click', handleOk);
+            }
+        }
+
+        function showConfirmation(title, text, onConfirm) {
+            if (!messageModal || !messageTitle || !messageText) return;
+            messageTitle.textContent = title;
+            messageText.textContent = text;
+            messageModal.classList.remove('hidden');
+            if (messageCancelBtn) messageCancelBtn.classList.remove('hidden');
+            
+            const handleOk = () => {
+                closeMessageModal();
+                if (onConfirm) onConfirm();
+            };
+            
+            const handleCancel = () => {
+                closeMessageModal();
+            };
+            
+            if (messageOkBtn) {
+                messageOkBtn.replaceWith(messageOkBtn.cloneNode(true));
+                messageOkBtn = document.getElementById('message-ok-btn');
+                messageOkBtn.addEventListener('click', handleOk);
+            }
+            
+            if (messageCancelBtn) {
+                messageCancelBtn.replaceWith(messageCancelBtn.cloneNode(true));
+                messageCancelBtn = document.getElementById('message-cancel-btn');
+                messageCancelBtn.addEventListener('click', handleCancel);
+            }
+        }
+
+        function closeMessageModal() {
+            if (messageModal) messageModal.classList.add('hidden');
+        }
+
+        function openAddStaffModal() {
+            if (addStaffModal) addStaffModal.classList.remove('hidden');
+        }
+
+        function closeAddStaffModal() {
+            if (addStaffModal) {
+                addStaffModal.classList.add('hidden');
+                // Clear form
+                [newStaffNameInput, newStaffPhoneInput].forEach(el => { if (el) el.value = ''; });
+                [newStaffCompanySelect, newStaffBranchSelect, newStaffDeptSelect].forEach(el => { if (el) el.value = ''; });
+                [newStaffCompanyOther, newStaffBranchOther, newStaffDeptOther].forEach(el => { if (el) { el.classList.add('hidden'); el.value = ''; }});
+            }
+        }
+
+        function openAddAdminModal() {
+            if (addAdminModal) addAdminModal.classList.remove('hidden');
+            populateDepartmentsCheckboxes();
+        }
+
+        function closeAddAdminModal() {
+            if (addAdminModal) {
+                addAdminModal.classList.add('hidden');
+                // Clear form
+                [newAdminNameInput, newAdminEmailInput, newAdminPasswordInput].forEach(el => { if (el) el.value = ''; });
+                if (newAdminRoleSelect) newAdminRoleSelect.value = 'master';
+                if (departmentsSection) departmentsSection.classList.add('hidden');
+                [permAddStaff, permDeleteStaff, permEditStaff, permManageGeofence].forEach(el => { if (el) el.checked = false; });
+            }
+        }
+
+        function openEditModal(id, name, phone, company, branch, dept) {
+            if (!editModal) return;
+            editStaffIdInput.value = id;
+            editStaffNameInput.value = name;
+            editStaffPhoneInput.value = phone;
+            
+            setSelectOtherValue(editStaffCompanySelect, editStaffCompanyOther, company);
+            setSelectOtherValue(editStaffBranchSelect, editStaffBranchOther, branch);
+            setSelectOtherValue(editStaffDeptSelect, editStaffDeptOther, dept);
+            
+            editModal.classList.remove('hidden');
+        }
+
+        function closeEditModal() {
+            if (editModal) editModal.classList.add('hidden');
+        }
+
+
+        function openCreateGeofenceModal() {
+            if (!geofenceModal) return;
+            geofenceModalTitle.textContent = 'Create Geofence';
+            editGeofenceIdInput.value = '';
+            geofenceNameInput.value = '';
+            assignAllStaffCheckbox.checked = false;
+            
+            // Populate staff list
+            geofenceStaffListEl.innerHTML = '';
+            Object.values(staffDataCache).forEach(staff => {
+                if (staff.data?.name) {
+                    const label = document.createElement('label');
+                    label.className = 'flex items-center space-x-2 text-gray-200';
+                    label.dataset.name = staff.data.name || '';
+                    label.dataset.company = staff.data.company || '';
+                    label.dataset.branch = staff.data.branch || '';
+                    label.dataset.dept = staff.data.dept || '';
+                    label.innerHTML = `
+                        <input type="checkbox" value="${escapeAttr(staff.id)}" class="h-4 w-4 text-purple-600">
+                        <span>${escapeHTML(staff.data.name)}</span>
+                    `;
+                    geofenceStaffListEl.appendChild(label);
+                }
+            });
+            
+            // Reset and apply search filter
+            if (geofenceStaffSearchInput) { geofenceStaffSearchInput.value = ''; filterGeofenceStaffList(); }
+            
+            geofenceModal.classList.remove('hidden');
+        }
+
+        function openEditGeofenceModal(id) {
+            if (!geofenceModal || !geofencesCache[id]) return;
+            const fence = geofencesCache[id];
+            
+            geofenceModalTitle.textContent = 'Edit Geofence';
+            editGeofenceIdInput.value = id;
+            geofenceNameInput.value = fence.name;
+            assignAllStaffCheckbox.checked = fence.assignedStaff?.includes('all') || false;
+            
+            // Populate staff list with current assignments
+            geofenceStaffListEl.innerHTML = '';
+            Object.values(staffDataCache).forEach(staff => {
+                if (staff.data?.name) {
+                    const isAssigned = fence.assignedStaff?.includes(staff.id) || false;
+                    const label = document.createElement('label');
+                    label.className = 'flex items-center space-x-2 text-gray-200';
+                    label.dataset.name = staff.data.name || '';
+                    label.dataset.company = staff.data.company || '';
+                    label.dataset.branch = staff.data.branch || '';
+                    label.dataset.dept = staff.data.dept || '';
+                    label.innerHTML = `
+                        <input type="checkbox" value="${escapeAttr(staff.id)}" class="h-4 w-4 text-purple-600" ${isAssigned ? 'checked' : ''}>
+                        <span>${escapeHTML(staff.data.name)}</span>
+                    `;
+                    geofenceStaffListEl.appendChild(label);
+                }
+            });
+            
+            // Reset and apply search filter
+            if (geofenceStaffSearchInput) { geofenceStaffSearchInput.value = ''; filterGeofenceStaffList(); }
+            
+            geofenceModal.classList.remove('hidden');
+        }
+
+        function closeGeofenceModal() {
+            if (geofenceModal) geofenceModal.classList.add('hidden');
+            tempGeofenceData = null;
+        }
+
+        // Filter/search within geofence staff list
+        function filterGeofenceStaffList(){
+            if (!geofenceStaffListEl) return;
+            const q = (geofenceStaffSearchInput?.value || '').trim().toLowerCase();
+            Array.from(geofenceStaffListEl.children).forEach(el => {
+                if (!(el instanceof HTMLElement) || el.tagName !== 'LABEL') return;
+                const text = [el.dataset.name||'', el.dataset.company||'', el.dataset.branch||'', el.dataset.dept||''].join(' ').toLowerCase();
+                const match = !q || text.includes(q);
+                el.classList.toggle('hidden', !match);
+            });
+        }
+
+        function openHistoryModal(id) {
+            if (!historyModal || !staffDataCache[id]) return;
+            historyStaffIdInput.value = id;
+            historyStaffNameEl.textContent = staffDataCache[id].data?.name || 'Unnamed Staff';
+            historyDatePicker.value = new Date().toISOString().split('T')[0];
+            historyModal.classList.remove('hidden');
+        }
+
+        function closeHistoryModal() {
+            if (historyModal) historyModal.classList.add('hidden');
+        }
+
+        function closeDayReportModal() {
+            if (dayReportModal) dayReportModal.classList.add('hidden');
+        }
+
+
+        // Helper functions
+        function scrollToCard(id) {
+            const card = document.getElementById(`staff-card-${id}`);
+            if (card && staffListEl) {
+                card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                card.classList.add('card-highlight');
+                setTimeout(() => card.classList.remove('card-highlight'), 1500);
+            }
+        }
+
+        function panToStaff(id) {
+            if (map && staffMarkers[id]) {
+                const target = staffMarkers[id].getLatLng();
+                // Draw temp route line from last to current
+                if (lastPanLatLng && target) {
+                    if (tempRouteLine) { map.removeLayer(tempRouteLine); tempRouteLine = null; }
+                    tempRouteLine = L.polyline([lastPanLatLng, target], { color: '#60A5FA', weight: 3, opacity: 0.8 }).addTo(map);
+                    setTimeout(() => { if (tempRouteLine) { map.removeLayer(tempRouteLine); tempRouteLine = null; } }, 1500);
+                }
+                lastPanLatLng = target;
+                map.flyTo(target, 18, { duration: 1.2, easeLinearity: 0.25 });
+            }
+        }
+
+        async function fetchLocationName(id) {
+            const staff = staffDataCache[id];
+            if (!staff?.data?.live_location?.lat) return;
+            
+            const { lat, lng } = staff.data.live_location;
+            const locationTextEl = document.getElementById(`location-text-${id}`);
+            
+            try {
+                const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=16`);
+                const data = await response.json();
+                const address = data.display_name || 'Unknown location';
+                // Cache and re-render to keep it fixed
+                locationCache[id] = address;
+                if (locationTextEl) {
+                    locationTextEl.innerHTML = `Location: <span class=\"text-blue-300\">${escapeHTML(address)}</span>`;
+                }
+            } catch (error) {
+                console.error('Geocoding error:', error);
+                if (locationTextEl) {
+                    locationTextEl.innerHTML = `Location: <span class=\"text-red-300\">Failed to get address</span>`;
+                }
+            }
+        }
+
+        // --- Event Listeners ---
+        if (staffListEl) {
+            staffListEl.addEventListener('click', (e)=>{ 
+                const btn=e.target.closest('button'), card=e.target.closest('.staff-card-clickable'); 
+                if(btn){ 
+                    e.stopPropagation(); 
+                    const d=btn.dataset; 
+                    if(!d || !d.id || d.id === 'undefined' || d.id === 'null') { 
+                        console.warn("Button clicked without valid data-id: ", d); 
+                        return; 
+                    } 
+                    if(btn.classList.contains('edit-name-btn')) {
+                        openEditModal(d.id, d.name, d.phone, d.company, d.branch, d.dept); 
+                    } else if(btn.classList.contains('view-history-btn')) {
+                         openHistoryModal(d.id);
+                    } else if(btn.classList.contains('view-day-report-btn')) {
+                         fetchAndShowDayReport(d.id);
+                    } else if(btn.classList.contains('find-location-btn')) {
+                         fetchLocationName(d.id); 
+                    }
+                } else if(card?.dataset.id) { 
+                    panToStaff(card.dataset.id); 
+                }
+            });
+        }
+        if (geofenceListEl) geofenceListEl.addEventListener('click', (e)=>{ const del=e.target.closest('.delete-geofence-btn'), edit=e.target.closest('.edit-geofence-btn'); if(del?.dataset.id) deleteGeofence(del.dataset.id); else if(edit?.dataset.id) openEditGeofenceModal(edit.dataset.id); });
+        if (openAddStaffModalBtn) openAddStaffModalBtn.addEventListener('click', openAddStaffModal); if (cancelAddStaffBtn) cancelAddStaffBtn.addEventListener('click', closeAddStaffModal); if (addStaffBtn) addStaffBtn.addEventListener('click', addNewStaff);
+        if (cancelEditBtn) cancelEditBtn.addEventListener('click', closeEditModal); if (saveEditBtn) saveEditBtn.addEventListener('click', saveStaffInfo); if (deleteStaffBtn) deleteStaffBtn.addEventListener('click', ()=>{const id=editStaffIdInput?.value, name=editStaffNameInput?.value; if(id&&name) confirmDeleteStaff(id,name);});
+        if (cancelGeofenceBtn) cancelGeofenceBtn.addEventListener('click', closeGeofenceModal); if (saveGeofenceBtn) saveGeofenceBtn.addEventListener('click', saveGeofence); if (assignAllStaffCheckbox) assignAllStaffCheckbox.addEventListener('change', (e)=>{const c=e.target.checked; if(geofenceStaffListEl) geofenceStaffListEl.querySelectorAll('input').forEach(cb=>{cb.checked=c; cb.disabled=c;});}); if (createGeofenceBtn) createGeofenceBtn.addEventListener('click', ()=>{if(drawControl) drawControl.enable();}); if (geofenceStaffSearchInput) geofenceStaffSearchInput.addEventListener('input', filterGeofenceStaffList);
+        if (searchInput) { searchInput.addEventListener('input', handleSearch); document.addEventListener('click', (e) => { const container = document.getElementById('search-container'); if (container && !container.contains(e.target) && searchResultsEl) { searchResultsEl.classList.add('hidden'); } }); } 
+        if (searchResultsEl) { searchResultsEl.addEventListener('click', (e) => { const item = e.target.closest('div[data-id]'); if (item?.dataset.id) { panToStaff(item.dataset.id); if(searchInput) searchInput.value=''; searchResultsEl.classList.add('hidden'); } }); } 
+        
+        // Logout Event Listener
+        if (logoutBtn) logoutBtn.addEventListener('click', handleLogout);
+        
+        // Admin Event Listeners
+        if (openAddAdminModalBtn) openAddAdminModalBtn.addEventListener('click', () => { if (!(isSuperAdmin || adminPermissions?.canManageAdmins)) { showMessage("Forbidden", "You don't have permission to manage admins."); return; } openAddAdminModal(); });
+        if (cancelAddAdminBtn) cancelAddAdminBtn.addEventListener('click', closeAddAdminModal);
+        if (addAdminBtn) addAdminBtn.addEventListener('click', saveNewAdmin);
+        if (openManageAdminsBtn) openManageAdminsBtn.addEventListener('click', openManageAdminsModal);
+        if (closeManageAdminsBtn) closeManageAdminsBtn.addEventListener('click', closeManageAdminsModal);
+        if (cancelEditAdminBtn) cancelEditAdminBtn.addEventListener('click', closeEditAdminModal);
+        if (saveEditAdminBtn) saveEditAdminBtn.addEventListener('click', saveEditAdmin);
+        if (deleteAdminBtn) deleteAdminBtn.addEventListener('click', () => {
+            const id = editAdminId?.value;
+            const name = editAdminName?.value;
+            if (id && name) {
+                confirmDeleteAdmin(id, name);
+            } else {
+                showMessage('Error', 'Admin ID or name not found.');
+            }
+        });
+        
+        // Admin Search Listener
+        const adminSearchInput = document.getElementById('admin-search-input');
+        if (adminSearchInput) {
+            adminSearchInput.addEventListener('input', (e) => {
+                renderAdminsList(e.target.value);
+            });
+        }
+        
+        // Admin Filter Listeners
+        document.querySelectorAll('.admin-filter-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                currentAdminFilter = btn.dataset.filter;
+                updateAdminFilterButtons();
+                const searchInput = document.getElementById('admin-search-input');
+                renderAdminsList(searchInput?.value || '');
+            });
+        });
+        
+        // Password Reset Toggle Listener
+        const togglePasswordResetBtn = document.getElementById('toggle-password-reset');
+        const passwordResetSection = document.getElementById('password-reset-section');
+        if (togglePasswordResetBtn && passwordResetSection) {
+            togglePasswordResetBtn.addEventListener('click', () => {
+                const isHidden = passwordResetSection.classList.contains('hidden');
+                if (isHidden) {
+                    passwordResetSection.classList.remove('hidden');
+                    togglePasswordResetBtn.textContent = 'Cancel';
+                } else {
+                    passwordResetSection.classList.add('hidden');
+                    togglePasswordResetBtn.textContent = 'Change Password';
+                    // Clear password fields
+                    const newPasswordInput = document.getElementById('edit-admin-new-password');
+                    const confirmPasswordInput = document.getElementById('edit-admin-confirm-password');
+                    if (newPasswordInput) newPasswordInput.value = '';
+                    if (confirmPasswordInput) confirmPasswordInput.value = '';
+                }
+            });
+        }
+        
+        // Filter Modal Event Listeners
+        if (filterIconBtn) filterIconBtn.addEventListener('click', openFilterModal);
+        if (cancelFilterBtn) cancelFilterBtn.addEventListener('click', closeFilterModal);
+        if (clearFiltersBtn) clearFiltersBtn.addEventListener('click', clearFilters);
+        if (applyFiltersBtn) applyFiltersBtn.addEventListener('click', () => { 
+             // Apply the temp state to the current state
+            currentFilterState = {
+                companies: new Set(tempFilterState.companies),
+                branches: new Set(tempFilterState.branches),
+                departments: new Set(tempFilterState.departments),
+                staffIds: new Set(tempFilterState.staffIds),
+                statuses: new Set(tempFilterState.statuses),
+            };
+            renderUI(); // Re-render with applied filters
+            closeFilterModal(); 
+        });
+        
+        // Add single listener to the modal for checkbox changes
+        if (filterModal) {
+             filterModal.addEventListener('input', handleFilterChange); 
+        }
+        
+        // History Modal Listeners
+        if (cancelHistoryBtn) cancelHistoryBtn.addEventListener('click', closeHistoryModal);
+        if (showHistoryBtn) showHistoryBtn.addEventListener('click', () => {
+            const id = historyStaffIdInput.value;
+            const dateStr = historyDatePicker.value;
+            if (id && dateStr) {
+                // Parse date as local, not UTC
+                const parts = dateStr.split('-');
+                const date = new Date(parts[0], parts[1] - 1, parts[2]);
+                fetchAndShowHistory(id, date);
+                closeHistoryModal();
+            } else {
+                showMessage("Error", "Please select a staff and a date.");
+            }
+        });
+
+        // Day Report Modal Listener
+        if (closeReportBtn) closeReportBtn.addEventListener('click', closeDayReportModal);
+
+
+        // Setup "Other" listeners
+        setupSelectOtherListeners();
+        
+        // --- Init ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initializeMap();
+            initializeAuth();
+        });
+        
+        // --- Cloud Func Reminder ---
+        /* NOTE FOR AUTO DELETE: Use a scheduled Firebase Cloud Function to delete history older than 45 days. Cannot be done client-side. */
+        
+    </script>
+</body>
+</html>
